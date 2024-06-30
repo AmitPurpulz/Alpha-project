@@ -2,7 +2,7 @@ import time
 
 Player_HP = 100
 Player_Money = 20
-Enemy_Money = 0
+Enemy_Money = 10
 List_Of_Enemies = []
 List_Of_Towers = []
 last_spawn_time = 0
@@ -12,14 +12,6 @@ Round = 1
 Rows = 10
 Columns = 10
 
-def Create_Enemy(map_2d, enemy):
-    global List_Of_Enemies, last_spawn_time
-    if (time.time() - last_spawn_time >= 2):
-        last_spawn_time = time.time()
-        map_2d[enemy.row][enemy.column] = enemy
-        enemy.OnSpawner = True
-        List_Of_Enemies.append(enemy)
-    return map_2d, List_Of_Enemies
 
 def Place_Tower(game_map, soldier_list):
     Towers = []

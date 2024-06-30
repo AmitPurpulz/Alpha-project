@@ -1,16 +1,27 @@
 import random
-from Game import Player_Money, Rows, Columns, Enemy_Money
+import time
+import Game
+import classes as cl
+from Game import Player_Money, Rows, Columns, Enemy_Money, last_spawn_time
 from classes import List_Of_Towers_Options, NormalTower, Tower, Enemy, NormalEnemy
+from trying import num_spawners, list_of_spawner_rows, list_of_spawner_columns
 
 
+num_spawners = num_spawners
+list_of_spawner_rows = list_of_spawner_rows
+list_of_spawner_columns = list_of_spawner_columns
 def Random_Enemy_Algorithm(Enemy_Options: list, game_map):
     global Enemy_Money
     normal_enemy_instance = NormalEnemy(0,0)
-    while (tower.price > Player_Money):
-        tower = Tower_Options[random.randint(0, len(Tower_Options)-1)](0,0)
-        if Player_Money < normal_tower_instance.price:
-            break
-    row, column = Best_Location(game_map, tower)
+    enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options)-1)](0,0)
+    enemy_instance: cl.Enemy
+    while (enemy_instance.money_drop > Enemy_Money):
+        enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options)-1)](0,0)
+        if Enemy_Money < normal_enemy_instance.money_drop:
+            return game_map
+    Enemy_Money = Enemy_Money - enemy_instance.money_drop
+    game_map, Game.List_Of_Enemies = Create_Enemy(game_map, enemy_instance)
+    return game_map
 
 def Random_Algorithm(Tower_Options: list, game_map):
     global Player_Money
@@ -26,7 +37,6 @@ def Random_Algorithm(Tower_Options: list, game_map):
     tower.column = column
     game_map[tower.row][tower.column] = tower
     return game_map
-
 
 
 def Expensive_Algorithm(Money, Tower_Options, game_map):
@@ -58,3 +68,15 @@ def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
             if (game_map[row][column] == "road" or game_map[row][column] == "spawner"):
                 num_of_tiles = num_of_tiles + 1
     return num_of_tiles
+
+def Create_Enemy(map_2d, enemy):
+    global List_Of_Enemies, last_spawn_time
+    if time.time() - last_spawn_time >= 2:
+        last_spawn_time = time.time()
+        enemy_location_index = random.randint(0, num_spawners - 1)
+        enemy.row = list_of_spawner_rows[enemy_location_index]
+        enemy.column = list_of_spawner_columns[enemy_location_index]
+        map_2d[enemy.row][enemy.column] = enemy
+        enemy.OnSpawner = True
+        List_Of_Enemies.append(enemy)
+    return map_2d, List_Of_Enemies

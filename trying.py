@@ -4,12 +4,91 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import Game
+from Game import Enemy_Money, Player_Money, last_spawn_time, List_Of_Enemies, List_Of_Towers
 import classes as cl
+from classes import NormalTower, NormalEnemy, Tower, Enemy
 import plotly as pl
 import json
 import time
-import Algorithms
 from matplotlib.colors import ListedColormap
+
+
+#THIS IS THE ALGORITHMS FILE I HAVE A CIRCULAR IMPORT ISSUE SO I TEMPORARLY MOVE THE ALGORITHMS FILE HERE
+def Random_Enemy_Algorithm(Enemy_Options: list, game_map):
+    global Enemy_Money
+    normal_enemy_instance = NormalEnemy(0,0)
+    enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options)-1)](0,0)
+    enemy_instance: cl.Enemy
+    while (enemy_instance.money_drop > Enemy_Money):
+        enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options)-1)](0,0)
+        if Enemy_Money < normal_enemy_instance.money_drop:
+            return game_map
+    Enemy_Money = Enemy_Money - enemy_instance.money_drop
+    game_map, Game.List_Of_Enemies = Create_Enemy(game_map, enemy_instance)
+    print(enemy_instance.name)
+    return game_map
+
+def Random_Algorithm(Tower_Options: list, game_map):
+    global Player_Money
+    normal_tower_instance = NormalTower(0,0)
+    tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)](0, 0)
+    while (tower.price > Player_Money):
+        tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)](0, 0)
+        if Player_Money < normal_tower_instance.price:
+            return game_map
+    Player_Money = Player_Money - tower.price
+    row, column = Best_Location(game_map, tower)
+    tower.row = row
+    tower.column = column
+    game_map[tower.row][tower.column] = tower
+    List_Of_Towers.append(tower)
+    print(tower)
+    return game_map
+
+
+def Expensive_Algorithm(Money, Tower_Options, game_map):
+    cheapest = NormalTower.price
+    while (Money >= cheapest):
+        for tower in range(0, len(Tower_Options)):
+            if (Tower_Options[tower].price <= Money):
+                Money = Money - Tower_Options[tower].price
+
+def Best_Location(game_map, tower: Tower):
+    best_location_row = 0
+    best_location_column = 0
+    num_of_tiles = 0
+    biggest_num_of_tiles = 0
+    for row in range(0, rows):
+        for column in range(0, columns):
+            if (game_map[row][column] == "empty"):
+                num_of_tiles = Surrounding_tiles(game_map, tower, row, column)
+            if num_of_tiles > biggest_num_of_tiles:
+                biggest_num_of_tiles = num_of_tiles
+                best_location_row = row
+                best_location_column = column
+    return best_location_row, best_location_column
+
+def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
+    num_of_tiles = 0
+    for row in range(min(tower_row + tower.attack_range, rows-1), max(tower_row - tower.attack_range, 0), -1):
+        for column in range(min(tower_column + tower.attack_range, columns-1),max(tower_column - tower.attack_range, 0), -1):
+            if (game_map[row][column] == "road" or game_map[row][column] == "spawner"):
+                num_of_tiles = num_of_tiles + 1
+    return num_of_tiles
+
+def Create_Enemy(map_2d, enemy):
+    global List_Of_Enemies, last_spawn_time
+    if time.time() - last_spawn_time >= 2:
+        last_spawn_time = time.time()
+        enemy_location_index = random.randint(0, num_spawners - 1)
+        enemy.row = list_of_spawner_rows[enemy_location_index]
+        enemy.column = list_of_spawner_columns[enemy_location_index]
+        map_2d[enemy.row][enemy.column] = enemy
+        enemy.OnSpawner = True
+        List_Of_Enemies.append(enemy)
+    return map_2d, List_Of_Enemies
+
+
 
 list_of_spawner_rows = []
 list_of_spawner_columns = []
@@ -72,45 +151,6 @@ def create_map(rows, columns, difficulty):
             while (map_2d[end_row][end_column] == 'empty'):
                 end_column = random.randint(list_of_spawner_columns[spawner], columns - 1)
             map_2d = Create_Path(map_2d, list_of_spawner_rows[spawner], list_of_spawner_columns[spawner], end_row, end_column)
-        '''
-        else:
-            map_2d = Remaining_paths(map_2d,list_of_spawner_rows[spawner],list_of_spawner_columns[spawner])
-
-        temp = []
-        change_direction_counter =0
-        if list_of_spawner_rows[spawner] == rows//2:
-            for square in range(list_of_spawner_columns[spawner]+1,columns-1):
-                map_2d[list_of_spawner_rows[spawner]][square] = "road"
-        else:
-            road_row = list_of_spawner_rows[spawner]
-            vertical_distance_from_base = rows//2-list_of_spawner_rows[spawner]
-
-            for square in range(list_of_spawner_columns[spawner]+1,columns):
-                if (vertical_distance_from_base != 0 ):
-                    direction = random.randint(0,1) #1 indicates that the next road will be up or down and 0 means it will go to the right
-                else:
-                    direction = 0
-
-                if (direction == 1):
-                    change_direction_counter+=1 #how many time a road was placed up or down
-                    if (vertical_distance_from_base > 0 and map_2d[road_row+1][square-change_direction_counter] != "spawner"):
-                        road_row += 1
-                        map_2d[road_row][square-change_direction_counter] = "road"
-                        vertical_distance_from_base-=1
-
-                    elif(vertical_distance_from_base < 0 and map_2d[road_row-1][square-change_direction_counter] != spawner):
-                        road_row -= 1
-                        map_2d[road_row][square-change_direction_counter] = "road"
-                        vertical_distance_from_base += 1
-
-                else:
-                    if (map_2d[road_row][square-change_direction_counter] != "spawner"):
-                        map_2d[road_row][square-change_direction_counter] = "road"
-                temp.append(direction)
-                temp.append((road_row,square))
-        print(temp)
-        '''
-
     return map_2d
 
 def Create_Path(map_2d, spawner_row, spawner_column, end_block_row, end_block_column):
@@ -195,11 +235,16 @@ game_map = create_map(rows, columns, difficulty_level)
 # game_map = create_map(rows, columns, difficulty_level)
 
 def Rounds(game_map):
-    normal_enemy = cl.NormalEnemy(0,0)
-    if Game.Enemy_Money > cl.normal_enemy_instance.money_drop:
-        enemy_index = random.randint(0, len(cl.List_Of_Enemies_Options)-1)
-        enemy_instance = cl.List_Of_Towers_Options(enemy_index)
-        game_map = Game.Create_Enemy(game_map, enemy_instance)
+    global Player_Money, Enemy_Money, Round_time
+    game_map = Random_Enemy_Algorithm(cl.List_Of_Enemies_Options, game_map)
+    game_map = Random_Algorithm(cl.List_Of_Towers_Options, game_map)
+    if (time.time() >= Round_time+10):
+        Player_Money = Player_Money + 20
+        Enemy_Money = Enemy_Money + 20
+        Round_time = time.time()
+    return game_map
+
+
 
 
 
@@ -214,13 +259,13 @@ def Convert_map_to_visual_map(matrix):
     for row in range(len(game_map2)):
         for space in range(len(game_map2[row])): ######IT SHOULD BE len(game_map[row])
             if game_map2[row][space] == "spawner":
-                game_map2[row][space] = 1
+                game_map2[row][space] = 2
             elif game_map2[row][space] == "empty":
                 game_map2[row][space] = 0
             elif game_map2[row][space] == "base":
-                game_map2[row][space] = 3
+                game_map2[row][space] = 4
             elif game_map2[row][space] == "road":
-                game_map2[row][space] = 2
+                game_map2[row][space] = 3
             elif isinstance(game_map2[row][space], cl.Enemy):
                 game_map2[row][space] = 5
             elif isinstance((game_map2[row][space]),cl.Tower):
@@ -228,12 +273,12 @@ def Convert_map_to_visual_map(matrix):
     return game_map2
 
 
-
 visual_map = Convert_map_to_visual_map(game_map)
 # Print the visual_map_array
-colors = ['#ffffff', '#ff9999', '#ff6666', '#ff3333', '#ff0000',
-          '#cc0000', '#990000', '#660000', '#330000', '#000000']
+colors = ['#ffffff', '#ff0000', '#ffa500', '#ffff00', '#008000',
+          '#00ffff', '#0000ff', '#800080', '#ff00ff', '#000000']
 cmap = ListedColormap(colors)
+plt.gca().set_facecolor('#d3d3d3')
 # Display the visual map using matplotlib
 plt.ion() #turns on interactive mode
 
@@ -241,28 +286,28 @@ matrix = plt.imshow(visual_map, cmap=cmap, interpolation='nearest', vmin=1, vmax
 plt.colorbar(ticks=range(1, 11))
 
 
-
+Round_time = time.time()
 while True:
     matrix.set_data(visual_map)
     plt.draw()
     plt.pause(0.25)
     num_of_enemies = len(Game.List_Of_Enemies)
+    temp_num_of_enemies = len(Game.List_Of_Enemies)
     for Tower in Game.List_Of_Towers:
         game_map = Tower.Check_Attack(game_map)
         num_of_enemies = len(Game.List_Of_Enemies)
     for enemy in range(0,len(Game.List_Of_Enemies)):
+        if (temp_num_of_enemies != num_of_enemies):
+            if (enemy == num_of_enemies):
+                break
         game_map = Game.List_Of_Enemies[enemy].Move(game_map)
-        if (len(Game.List_Of_Enemies) < num_of_enemies):
+        if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
             game_map = Game.List_Of_Enemies[enemy].Move(game_map)
-            enemy = enemy-1
             num_of_enemies = len(Game.List_Of_Enemies)
+    if (len(List_Of_Enemies) > 0):
+        print(List_Of_Enemies[0].health)
     visual_map = Convert_map_to_visual_map(game_map)
-    bad = cl.NormalEnemy(0,0)
-    bad_location_index = random.randint(0,num_spawners-1)
-    bad.row = list_of_spawner_rows[bad_location_index]
-    bad.column = list_of_spawner_columns[bad_location_index]
-    game_map, Game.List_Of_Enemies = Game.Create_Enemy(game_map, bad)
-    game_map = Algorithms.Random_Algorithm(cl.List_Of_Towers_Options, game_map)
+    game_map = Rounds(game_map)
     if (Game.Player_HP <= 0):
         print("YOU LOSE!")
         break
