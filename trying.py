@@ -191,6 +191,11 @@ def Create_Path(map_2d, spawner_row, spawner_column, end_block_row, end_block_co
             temp.append((road_row, square))
     return map_2d
 
+
+def Fix_Path(game_map):
+    while (Surrounding_tiles(game_map, tower=cl.ShotgunTower(0,0),tower_row= rows//2,tower_column= columns-1)): #the reason im using this here is to ensure that there are roads surrounding the base meaning there is a way to get to the base (im using the shotgun soldier because he has an attack range of 1)
+        game_map = create_map(rows, columns, difficulty_level)
+    return game_map
 # Define the dimensions of the map
 rows = Game.Rows
 columns = Game.Columns
@@ -228,7 +233,7 @@ difficulty_level = input("write the difficulty you want")
 
 # Create the map based on the chosen difficulty
 game_map = create_map(rows, columns, difficulty_level)
-
+game_map = Fix_Path(game_map)
 # Validate that each spawner has a path to the base
 # while not validate_paths(game_map, 3):
 # If validation fails, recreate the map until paths are valid
@@ -239,9 +244,9 @@ def Rounds(game_map):
     game_map = Random_Enemy_Algorithm(cl.List_Of_Enemies_Options, game_map)
     game_map = Random_Algorithm(cl.List_Of_Towers_Options, game_map)
     if (time.time() >= Round_time+10):
-        Player_Money = Player_Money + 20
-        Enemy_Money = Enemy_Money + 20
+        Enemy_Money = Enemy_Money + 20*Game.num_of_rounds
         Round_time = time.time()
+        Game.num_of_rounds = Game.num_of_rounds + 1
     return game_map
 
 
@@ -272,7 +277,7 @@ def Convert_map_to_visual_map(matrix):
                 game_map2[row][space] = 8
     return game_map2
 
-
+'''
 visual_map = Convert_map_to_visual_map(game_map)
 # Print the visual_map_array
 colors = ['#ffffff', '#ff0000', '#ffa500', '#ffff00', '#008000',
@@ -284,12 +289,12 @@ plt.ion() #turns on interactive mode
 
 matrix = plt.imshow(visual_map, cmap=cmap, interpolation='nearest', vmin=1, vmax =10)
 plt.colorbar(ticks=range(1, 11))
-
-
+'''
 Round_time = time.time()
+start_time = time.time()
 while True:
-    matrix.set_data(visual_map)
-    plt.draw()
+    #matrix.set_data(visual_map)
+    #plt.draw()
     plt.pause(0.25)
     num_of_enemies = len(Game.List_Of_Enemies)
     temp_num_of_enemies = len(Game.List_Of_Enemies)
@@ -304,12 +309,24 @@ while True:
         if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
             game_map = Game.List_Of_Enemies[enemy].Move(game_map)
             num_of_enemies = len(Game.List_Of_Enemies)
-    if (len(List_Of_Enemies) > 0):
-        print(List_Of_Enemies[0].health)
     visual_map = Convert_map_to_visual_map(game_map)
     game_map = Rounds(game_map)
     if (Game.Player_HP <= 0):
         print("YOU LOSE!")
         break
 
+end_time = time.time()
+game_duration = end_time - start_time
+
+# Save game stats to JSON
+game_stats = {
+    "difficulty": difficulty_level,
+    "rounds": Game.num_of_rounds,
+    "enemies_killed": Game.enemies_killed,
+    "duration_seconds": game_duration
+}
+
+with open("game_results.json", "a") as f:
+    json.dump(game_stats, f)
+    f.write("\n")
 
