@@ -18,8 +18,9 @@ towers = list(cl.towers.values())
 Enemies = (cl.List_Of_Enemies_Options)
 cheapest = towers[0]
 check_SpreadAlgorithm = False
-def Random_Enemy_Algorithm(Enemy_Options: list, game_map):
+def Random_Enemy_Algorithm(game_map):
     global Enemy_Money
+    Enemy_Options = cl.List_Of_Enemies_Options
     normal_enemy_instance = NormalEnemy(0, 0)
     enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)](0, 0)
     enemy_instance: cl.Enemy
@@ -320,7 +321,7 @@ def Run_Game(game_map):
             if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
                 game_map = Game.List_Of_Enemies[enemy].Move(game_map)
                 num_of_enemies = len(Game.List_Of_Enemies)
-        game_map = Rounds(game_map)
+        game_map = Rounds(game_map,Tower_Algorithm=Random_Algorithm,Enemy_Algorithm=Random_Enemy_Algorithm)
         if (Game.Player_HP <= 0):
             print("YOU LOSE!")
             break
@@ -330,10 +331,10 @@ def Run_Game(game_map):
 # If validation fails, recreate the map until paths are valid
 # game_map = create_map(rows, columns, difficulty_level)
 
-def Rounds(game_map):
+def Rounds(game_map, Tower_Algorithm, Enemy_Algorithm):
     global Player_Money, Enemy_Money, Round_time, Enemies
-    game_map = Random_Enemy_Algorithm(cl.List_Of_Enemies_Options, game_map)
-    game_map = Random_Algorithm(game_map)
+    game_map = Enemy_Algorithm(game_map)
+    game_map = Tower_Algorithm(game_map)
     if (Game.num_of_rounds % 40 == 0):
         Enemy_Money = Enemy_Money + 20*(Game.num_of_rounds/100)
         Player_Money = Player_Money + 20*(Game.num_of_rounds/100)
@@ -400,7 +401,7 @@ for game in range(0,1000):
         "difficulty": difficulty_level,
         "rounds": average_rounds_survived,
         "enemies_killed":average_enemies_killed,
-        "duration_seconds": average_rounds_survived
+        "duration_seconds": average_time_survived
     }
     print(game_stats)
     with open("game_results.json", "a") as f:
