@@ -391,7 +391,7 @@ def Run_Game(game_map):
         game_map = Rounds(game_map)
         print(List_Of_Towers)
         if (Game.Player_HP <= 0):
-            print("YOU LOSE!")
+            print("YOU LOST!!!")
             break
 
 
