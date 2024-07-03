@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import Game
-from Game import Enemy_Money, Player_Money, last_spawn_time, List_Of_Enemies, List_Of_Towers
+from Game import Enemy_Money, Player_Money
 import classes as cl
 from classes import NormalTower, NormalEnemy, Tower, Enemy
 import plotly as pl
@@ -13,9 +13,9 @@ import json
 import time
 from matplotlib.colors import ListedColormap
 
-
 #THIS IS THE ALGORITHMS FILE I HAVE A CIRCULAR IMPORT ISSUE SO I TEMPORARILY MOVE THE ALGORITHMS FILE HERE
 towers = list(cl.towers.values())
+Enemies = (cl.List_Of_Enemies_Options)
 cheapest = towers[0]
 check_SpreadAlgorithm = False
 def Random_Enemy_Algorithm(Enemy_Options: list, game_map):
@@ -27,9 +27,9 @@ def Random_Enemy_Algorithm(Enemy_Options: list, game_map):
         enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)](0, 0)
         if Enemy_Money < normal_enemy_instance.money_drop:
             return game_map
+    enemy_instance = NormalEnemy(0,0)
     Enemy_Money = Enemy_Money - enemy_instance.money_drop
-    game_map, Game.List_Of_Enemies = Create_Enemy(game_map, enemy_instance)
-    print(enemy_instance.name)
+    game_map = Create_Enemy(game_map, enemy_instance)
     return game_map
 
 
@@ -47,8 +47,7 @@ def Random_Algorithm(game_map):
     tower.row = row
     tower.column = column
     game_map[tower.row][tower.column] = tower
-    List_Of_Towers.append(tower)
-    print(tower)
+    Game.List_Of_Towers.append(tower)
     return game_map
 
 def Check_No_Towers(game_map):
@@ -73,7 +72,7 @@ def SpreadPlacement_Algorithm(game_map):
     if (Check_No_Towers(game_map)):
         game_map = Random_Algorithm(Tower_Options=towers, game_map=game_map)
     else:
-        for tower in List_Of_Towers:
+        for tower in Game.List_Of_Towers:
             temp_map = Blocks_In_Range(temp_map, tower)
         num_of_tiles = 0
         tower = towers[random.randint(0, len(cl.towers) - 1)]
@@ -84,7 +83,7 @@ def SpreadPlacement_Algorithm(game_map):
         Player_Money = Player_Money - tower.price
         tower.row, tower.column = Best_Location(temp_map, tower)
         game_map[tower.row][tower.column] = tower
-        List_Of_Towers.append(tower)
+        Game.List_Of_Towers.append(tower)
     return game_map
 
 def Expensive_Algorithm(game_map):
@@ -96,8 +95,7 @@ def Expensive_Algorithm(game_map):
                 Game.Player_Money = Game.Player_Money - towers[tower_price].price
                 tower.row, tower.column = Best_Location(game_map, tower)
                 game_map[tower.row][tower.column] = tower
-                List_Of_Towers.append(tower)
-                print(tower)
+                Game.List_Of_Towers.append(tower)
                 break
     return game_map
 
@@ -138,16 +136,20 @@ def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
     return num_of_tiles
 
 def Create_Enemy(map_2d, enemy):
-    global List_Of_Enemies, last_spawn_time
-    if time.time() - last_spawn_time >= 2:
-        last_spawn_time = time.time()
+    global last_spawn_time
+    if Game.num_of_rounds%4== 0:
         enemy_location_index = random.randint(0, num_spawners - 1)
         enemy.row = list_of_spawner_rows[enemy_location_index]
         enemy.column = list_of_spawner_columns[enemy_location_index]
         map_2d[enemy.row][enemy.column] = enemy
         enemy.OnSpawner = True
-        List_Of_Enemies.append(enemy)
-    return map_2d, List_Of_Enemies
+        enemy_health_increase_rate = 0.01
+        a = enemy_health_increase_rate
+        r = max(Game.num_of_rounds//40,1)
+        enemy.health = enemy.initial_health * (1+a)**(r-1)
+        print(enemy.health,"ushdunsnadicsdcsd")
+        Game.List_Of_Enemies.append(enemy)
+    return map_2d
 
 
 list_of_spawner_rows = []
@@ -301,13 +303,37 @@ if __name__ == "__main__":
 '''
 ######
 # Set the difficulty level ('easy', 'medium', or 'hard')
-difficulty_level = input("write the difficulty you want").lower()
+difficulty_level = "hard" #input("write the difficulty you want").lower()
 
-# Create the map based on the chosen difficulty
-game_map = create_map(rows, columns, difficulty_level)
-game_map = Fix_Path(game_map)
-temp_map = copy.deepcopy(game_map)
 
+def Run_Game(game_map):
+    global visual_map
+    while True:
+        matrix.set_data(visual_map)
+        plt.draw()
+        plt.pause(0.25)
+        num_of_enemies = len(Game.List_Of_Enemies)
+        temp_num_of_enemies = len(Game.List_Of_Enemies)
+        for Tower in range(0,len(Game.List_Of_Towers)):
+            game_map = Game.List_Of_Towers[Tower].Check_Attack(game_map)
+            num_of_enemies = len(Game.List_Of_Enemies)
+        for enemy in range(0, len(Game.List_Of_Enemies)):
+            if (temp_num_of_enemies != num_of_enemies):
+                if (enemy == num_of_enemies):
+                    break
+            game_map = Game.List_Of_Enemies[enemy].Move(game_map)
+            if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
+                game_map = Game.List_Of_Enemies[enemy].Move(game_map)
+                num_of_enemies = len(Game.List_Of_Enemies)
+        visual_map = Convert_map_to_visual_map(game_map)
+        game_map = Rounds(game_map)
+        print(Game.num_of_rounds)
+        print(Game.List_Of_Towers)
+        print(Game.List_Of_Enemies)
+        if (Game.Player_HP <= 0):
+            print("YOU LOSE!")
+            print(game_map)
+            break
 
 # Validate that each spawner has a path to the base
 # while not validate_paths(game_map, 3):
@@ -315,20 +341,17 @@ temp_map = copy.deepcopy(game_map)
 # game_map = create_map(rows, columns, difficulty_level)
 
 def Rounds(game_map):
-    global Player_Money, Enemy_Money, Round_time
+    global Player_Money, Enemy_Money, Round_time, Enemies
     game_map = Random_Enemy_Algorithm(cl.List_Of_Enemies_Options, game_map)
     game_map = Random_Algorithm(game_map)
-    if (time.time() >= Round_time + 10):
-        Enemy_Money = Enemy_Money + 20 * Game.num_of_rounds
-        Round_time = time.time()
-        Game.num_of_rounds = Game.num_of_rounds + 1
+    if (Game.num_of_rounds % 40 == 0):
+        Enemy_Money = Enemy_Money + 20*(Game.num_of_rounds/100)
+        Player_Money = Player_Money + 20*(Game.num_of_rounds/100)
+    Game.num_of_rounds = Game.num_of_rounds + 1
+    for enemy in Game.List_Of_Enemies:
+        print(enemy.health)
+    print(Player_Money)
     return game_map
-
-
-# CONVERTING TO VISUAL
-
-game_map_COPY = game_map
-
 
 def Convert_map_to_visual_map(matrix):
     game_map2 = [["empty" for _ in range(columns)] for _ in range(rows)]
@@ -352,8 +375,15 @@ def Convert_map_to_visual_map(matrix):
     return game_map2
 
 
-visual_map = Convert_map_to_visual_map(game_map)
-# Print the visual_map_array
+
+
+# Create the map based on the chosen difficulty
+game_map = create_map(rows, columns, difficulty_level)
+game_map = Fix_Path(game_map)
+temp_map = copy.deepcopy(game_map)
+plt.close()
+
+visual_map= Convert_map_to_visual_map(game_map)
 colors = ['#ffffff', '#ff0000', '#ffa500', '#ffff00', '#008000',
           '#00ffff', '#0000ff', '#800080', '#ff00ff', '#000000']
 cmap = ListedColormap(colors)
@@ -368,44 +398,19 @@ Round_time = time.time()
 start_time = time.time()
 
 
-def Run_Game(game_map):
-    global visual_map
-    while True:
-        matrix.set_data(visual_map)
-        plt.draw()
-        plt.pause(0.25)
-        num_of_enemies = len(Game.List_Of_Enemies)
-        temp_num_of_enemies = len(Game.List_Of_Enemies)
-        for Tower in Game.List_Of_Towers:
-            game_map = Tower.Check_Attack(game_map)
-            num_of_enemies = len(Game.List_Of_Enemies)
-        for enemy in range(0, len(Game.List_Of_Enemies)):
-            if (temp_num_of_enemies != num_of_enemies):
-                if (enemy == num_of_enemies):
-                    break
-            game_map = Game.List_Of_Enemies[enemy].Move(game_map)
-            if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
-                game_map = Game.List_Of_Enemies[enemy].Move(game_map)
-                num_of_enemies = len(Game.List_Of_Enemies)
-        visual_map = Convert_map_to_visual_map(game_map)
-        game_map = Rounds(game_map)
-        print(List_Of_Towers)
-        if (Game.Player_HP <= 0):
-            print("YOU LOSE!")
-            break
 
-
-end_time = time.time()
-game_duration = end_time - start_time
+start_time = time.time()
 Run_Game(game_map)  #THIS RUNS THE CODE
 # Save game stats to JSON
+end_time = time.time()
+game_duration = end_time-start_time
 game_stats = {
     "difficulty": difficulty_level,
     "rounds": Game.num_of_rounds,
     "enemies_killed": Game.enemies_killed,
     "duration_seconds": game_duration
 }
-
+print(game_stats)
 with open("game_results.json", "a") as f:
     json.dump(game_stats, f)
     f.write("\n")
