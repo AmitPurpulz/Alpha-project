@@ -307,32 +307,22 @@ difficulty_level = "hard" #input("write the difficulty you want").lower()
 
 
 def Run_Game(game_map):
-    global visual_map
-    while True:
-        matrix.set_data(visual_map)
-        plt.draw()
-        plt.pause(0.25)
+     while True: #MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
         num_of_enemies = len(Game.List_Of_Enemies)
         temp_num_of_enemies = len(Game.List_Of_Enemies)
         for Tower in range(0,len(Game.List_Of_Towers)):
             game_map = Game.List_Of_Towers[Tower].Check_Attack(game_map)
             num_of_enemies = len(Game.List_Of_Enemies)
         for enemy in range(0, len(Game.List_Of_Enemies)):
-            if (temp_num_of_enemies != num_of_enemies):
-                if (enemy == num_of_enemies):
-                    break
             game_map = Game.List_Of_Enemies[enemy].Move(game_map)
+            if (Game.Player_HP <= 0):
+                break
             if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
                 game_map = Game.List_Of_Enemies[enemy].Move(game_map)
                 num_of_enemies = len(Game.List_Of_Enemies)
-        visual_map = Convert_map_to_visual_map(game_map)
         game_map = Rounds(game_map)
-        print(Game.num_of_rounds)
-        print(Game.List_Of_Towers)
-        print(Game.List_Of_Enemies)
         if (Game.Player_HP <= 0):
             print("YOU LOSE!")
-            print(game_map)
             break
 
 # Validate that each spawner has a path to the base
@@ -348,9 +338,6 @@ def Rounds(game_map):
         Enemy_Money = Enemy_Money + 20*(Game.num_of_rounds/100)
         Player_Money = Player_Money + 20*(Game.num_of_rounds/100)
     Game.num_of_rounds = Game.num_of_rounds + 1
-    for enemy in Game.List_Of_Enemies:
-        print(enemy.health)
-    print(Player_Money)
     return game_map
 
 def Convert_map_to_visual_map(matrix):
@@ -376,41 +363,48 @@ def Convert_map_to_visual_map(matrix):
 
 
 
+for game in range(0,1000):
+    total_enemies_killed = 0
+    total_rounds_survived = 0
+    total_time_survived = 0
+    for avg in range(0, 10):
+        #Reset_Variables
+        Game.num_of_rounds = 0
+        Game.List_Of_Towers = []
+        Game.List_Of_Enemies = []
+        Player_Money = 50
+        Game.enemies_killed = 0
+        Enemy_Money = 10
+        Game.Player_HP = 1
+        list_of_spawner_columns = []
+        list_of_spawner_rows = []
 
-# Create the map based on the chosen difficulty
-game_map = create_map(rows, columns, difficulty_level)
-game_map = Fix_Path(game_map)
-temp_map = copy.deepcopy(game_map)
-plt.close()
+        # Create the map based on the chosen difficulty
+        game_map = create_map(rows, columns, difficulty_level)
+        game_map = Fix_Path(game_map)
+        temp_map = copy.deepcopy(game_map)
+        start_time = time.time()
 
-visual_map= Convert_map_to_visual_map(game_map)
-colors = ['#ffffff', '#ff0000', '#ffa500', '#ffff00', '#008000',
-          '#00ffff', '#0000ff', '#800080', '#ff00ff', '#000000']
-cmap = ListedColormap(colors)
-plt.gca().set_facecolor('#d3d3d3')
-# Display the visual map using matplotlib
-plt.ion()  #turns on interactive mode
+        start_time = time.time()
+        Run_Game(game_map)  #THIS RUNS THE CODE
+        # Save game stats to JSON
+        end_time = time.time()
+        game_duration = end_time-start_time
+        total_time_survived += game_duration
+        total_enemies_killed += Game.enemies_killed
+        total_rounds_survived += Game.num_of_rounds
+    average_enemies_killed = total_enemies_killed/10
+    average_time_survived = total_time_survived/10
+    average_rounds_survived = total_rounds_survived/10
+    game_stats = {
+        "difficulty": difficulty_level,
+        "rounds": average_rounds_survived,
+        "enemies_killed":average_enemies_killed,
+        "duration_seconds": average_rounds_survived
+    }
+    print(game_stats)
+    with open("game_results.json", "a") as f:
+        json.dump(game_stats, f)
+        f.write("\n")
 
-matrix = plt.imshow(visual_map, cmap=cmap, interpolation='nearest', vmin=1, vmax=10)
-plt.colorbar(ticks=range(1, 11))
-
-Round_time = time.time()
-start_time = time.time()
-
-
-
-start_time = time.time()
-Run_Game(game_map)  #THIS RUNS THE CODE
-# Save game stats to JSON
-end_time = time.time()
-game_duration = end_time-start_time
-game_stats = {
-    "difficulty": difficulty_level,
-    "rounds": Game.num_of_rounds,
-    "enemies_killed": Game.enemies_killed,
-    "duration_seconds": game_duration
-}
-print(game_stats)
-with open("game_results.json", "a") as f:
-    json.dump(game_stats, f)
-    f.write("\n")
+print("YIPPPIEEEEEE")
