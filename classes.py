@@ -7,13 +7,13 @@ class Enemy:
     def __init__(self, name, health, speed, money_drop, base_damage, row, column):
         self.name = name
         self.health = health
+        self.initial_health = health  # Added initial_health attribute
         self.speed = speed
         self.money_drop = money_drop
         self.base_damage = base_damage
         self.row = row
         self.column = column
         self.OnSpawner = False
-        self.last_move_time = 0
 
     def Check_Road(self, map_2d):
         row = int(self.row)
@@ -54,9 +54,7 @@ class Enemy:
         return row, column
 
     def Move(self, map_2d: list):
-        current_time = time.time()
-        if current_time - self.last_move_time >= self.speed:
-            self.last_move_time = current_time
+        if Game.num_of_rounds % self.speed*4 == 0:
             row = self.row
             column = self.column
             if self.OnSpawner:
@@ -85,6 +83,9 @@ class Enemy:
         Game.List_Of_Enemies.pop(Game.List_Of_Enemies.index(self))
         if (self.health > 0):
             Game.Player_HP = Game.Player_HP - self.base_damage
+        else:
+            Game.enemies_killed = Game.enemies_killed+1
+        print("DEADHDISFSD")
         return map_2d
 
 class Tower:
@@ -97,7 +98,6 @@ class Tower:
         self.upgrade_cost_2 = price * 1.5
         self.row = row
         self.column = column
-        self.last_shot_time = 0
 
     def Place_Tower(self, tower, row, column, map_2d):
         game_map = map_2d
@@ -106,21 +106,21 @@ class Tower:
 
     def Attack_Enemy(self, enemy: Enemy, map_2d):
         game_map = map_2d
-        enemy.health -= self.damage
+        enemy.health = enemy.health - self.damage
         if enemy.health <= 0:
             game_map = enemy.Destroy_Enemy(map_2d)
+            Game.Player_Money = Game.Player_Money+enemy.money_drop
         return game_map
 
     def Check_Attack(self, map_2d):
         game_map = map_2d
-        current_time = time.time()
-        if current_time - self.last_shot_time >= self.firerate:
+        if Game.num_of_rounds % (self.firerate*4) == 0:
             for row in range(min(self.row + self.attack_range, Game.Rows-1), max(self.row - self.attack_range,0), -1):
                 for column in range(min(self.column + self.attack_range, Game.Columns-1), max(self.column - self.attack_range, 0), -1):
                     if isinstance(map_2d[row][column], Enemy):
                         game_map = self.Attack_Enemy(map_2d[row][column], map_2d)
-                        self.last_shot_time = current_time
                         return game_map
+
         return game_map
 
 class NormalTower(Tower):
@@ -142,8 +142,6 @@ class SniperTower(Tower):
 class MinigunTower(Tower):
     def __init__(self, row, column):
         super().__init__(damage=1, firerate=0.25, attack_range=2, price=50, row=row, column=column)
-
-FPS = 1  # define the frame rate, this means every action will happen with a 1 sec interval
 
 # Example towers
 towers_list = [NormalTower(0, 0), ShotgunTower(0, 0), MachinegunTower(0, 0), SniperTower(0, 0), MinigunTower(0, 0)]
@@ -179,7 +177,6 @@ class BossEnemy(Enemy):
 
 List_Of_Enemies_Options = [NormalEnemy, FastEnemy, StrongEnemy, BossEnemy]
 List_Of_Towers_Options = [NormalTower, ShotgunTower, MachinegunTower, SniperTower, MinigunTower]
-
 # Example usage
 normal_enemy_instance = NormalEnemy(5, 5)
 print(vars(normal_enemy_instance))
