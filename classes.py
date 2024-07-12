@@ -18,6 +18,8 @@ class Enemy:
     def Check_Road(self, map_2d):
         row = int(self.row)
         column = int(self.column)
+        if (isinstance(map_2d[row][column], Enemy) or map_2d[row][column] == "spawner"):
+            pass
         Distance_From_Base_Vertical = self.row - Game.Rows // 2
         while True:
             Distance_From_Base_Vertical = self.row - Game.Rows // 2
@@ -27,17 +29,22 @@ class Enemy:
             elif Distance_From_Base_Vertical < 0:
                 choices.append("down")
             direction = random.choice(choices)
-            move_right = map_2d[row][column + 1]
-            if (direction == "right" and isinstance(move_right, Enemy)):
-                if (len(choices) > 1):
-                    direction = random.choice(choices)
-                else:
+            try:
+                move_right = map_2d[row][column + 1]
+                if (direction == "right" and isinstance(move_right, Enemy)):
+                    if (len(choices) > 1):
+                        direction = random.choice(choices)
+                    else:
+                        break
+                if direction == "right" and ((move_right in ["road","spawner","base"])):
+                    return row, column + 1
+                if direction == "right" and (isinstance(move_right, Enemy)):
                     break
-            if direction == "right" and (move_right == "road" or move_right == "base" or move_right == "spawner"):
-                return row, column + 1
+            except:
+                pass
             try:
                 move_up = map_2d[row - 1][column]
-                if direction == "up" and (move_up == "road" or move_up == "base" or move_up == "spawner"):
+                if direction == "up" and (move_up in ["road","spawner","base"] ):
                     return row - 1, column
                 if (direction == "up" and isinstance(move_up, Enemy)):
                     break
@@ -45,7 +52,7 @@ class Enemy:
                 pass
             try:
                 move_down = map_2d[row + 1][column]
-                if direction == "down" and (move_down == "road" or move_down == "base" or move_down == "spawner"):
+                if direction == "down" and (move_down in ["road","spawner","base"]):
                     return row + 1, column
                 if (direction == "down" and isinstance(move_down, Enemy)):
                     break
