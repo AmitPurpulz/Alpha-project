@@ -182,7 +182,7 @@ class BossEnemy(Enemy):
     def __init__(self, row, column):
         super().__init__("boss_enemy", 10, 2, 10, 5, row, column)
 
-List_Of_Enemies_Options = [NormalEnemy, FastEnemy, StrongEnemy, BossEnemy]
+List_Of_Enemies_Options = [NormalEnemy(0,0), FastEnemy(0,0), StrongEnemy(0,0), BossEnemy(0,0)]
 List_Of_Towers_Options = [NormalTower, ShotgunTower, MachinegunTower, SniperTower, MinigunTower]
 # Example usage
 normal_enemy_instance = NormalEnemy(5, 5)
