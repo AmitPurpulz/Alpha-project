@@ -17,19 +17,39 @@ towers = list(cl.towers.values())
 Enemies = (cl.List_Of_Enemies_Options)
 cheapest = towers[0]
 check_SpreadAlgorithm = False
-def Random_Enemy_Algorithm(game_map):
+Enemy_Options = []
+def Random_Enemy_Generator_Algorithm(game_map):
     global Enemy_Money
+    Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
     Enemy_Options = cl.List_Of_Enemies_Options
-    normal_enemy_instance = NormalEnemy(0, 0)
     enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)](0, 0)
     enemy_instance: cl.Enemy
-    while (enemy_instance.money_drop > Enemy_Money):
+    for rounds in range(0,10000):
         enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)](0, 0)
-        if Enemy_Money < normal_enemy_instance.money_drop:
-            return game_map
-    enemy_instance = NormalEnemy(0,0)
-    Enemy_Money = Enemy_Money - enemy_instance.money_drop
-    game_map = Create_Enemy(game_map, enemy_instance)
+        enemy_name = enemy_instance.name
+        Predetermined_List_Of_Enemies.append(enemy_name)
+    return Predetermined_List_Of_Enemies
+
+def Random_Enemy_Algorithm(game_map):
+    global Enemy_Money, Enemy_Options
+    normal_enemy_instance = NormalEnemy(0, 0)
+    i = 0
+    enemy = 0
+    while (normal_enemy_instance.money_drop < Enemy_Money):
+        enemy_name = Enemy_Options[i]
+        for e in Enemies:
+            e : cl.Enemy
+            if (enemy_name == e.name):
+                enemy = e
+                break
+        if (i == len(Enemy_Options)):
+            break
+        if (enemy.money_drop > Enemy_Money):
+            i = i +1
+        else:
+            game_map = Create_Enemy(game_map, enemy)
+            Enemy_Money = Enemy_Money - enemy.money_drop
+            Enemy_Options.pop(i)
     return game_map
 
 
@@ -136,7 +156,6 @@ def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
     return num_of_tiles
 
 def Create_Enemy(map_2d, enemy):
-    global last_spawn_time
     if Game.num_of_rounds%4== 0:
         enemy_location_index = random.randint(0, num_spawners - 1)
         enemy.row = list_of_spawner_rows[enemy_location_index]
@@ -147,137 +166,107 @@ def Create_Enemy(map_2d, enemy):
         a = enemy_health_increase_rate
         r = max(Game.num_of_rounds//40,1)
         enemy.health = enemy.initial_health * (1+a)**(r-1)
-        print(enemy.health,"ushdunsnadicsdcsd")
-        if (enemy.health > 11):
-            print("BAD")
         Game.List_Of_Enemies.append(enemy)
     return map_2d
 
+class MapGenerator:
+    def __init__(self):
+        self.list_of_spawner_rows = []
+        self.list_of_spawner_columns = []
+        self.num_spawners = 0
+        self.game_map = []
 
-list_of_spawner_rows = []
-list_of_spawner_columns = []
-num_spawners = 0
+    def create_map(self, rows, columns, difficulty):
+        self.map_2d = [["empty" for _ in range(columns)] for _ in range(rows)]
+        self.num_spawners = 1
+        valid_difficulties = ["easy", "medium", "hard"]
 
+        while difficulty not in valid_difficulties:
+            difficulty = input("Please type the difficulty again (easy, medium, hard): ").lower()
 
-def create_map(rows, columns, difficulty):
-    global list_of_spawner_columns, list_of_spawner_rows, num_spawners
-    map_2d = [["empty" for _ in range(columns)] for _ in range(rows)]
-    num_spawners = 1
-    valid_difficulties = ["easy", "medium", "hard"]
+        if difficulty == "easy":
+            self.map_2d[rows // 2][0] = "spawner"
+        elif difficulty == "medium":
+            self.num_spawners = 2
+            self.column_distance = int(columns // 2 - 2)
+        elif difficulty == "hard":
+            self.num_spawners = 3
+            self.column_distance = int(columns // 2 - 1)
 
-    while difficulty not in valid_difficulties:
-        difficulty = input("Please type the difficulty again (easy, medium, hard): ").lower()
+        self.list_of_spawner_rows = []
+        self.list_of_spawner_columns = []
 
-    if difficulty == "easy":
-        map_2d[rows // 2][0] = "spawner"
-    elif difficulty == "medium":
-        num_spawners = 2
-        column_distance = int(columns // 2 - 2)
-    elif difficulty == "hard":
-        num_spawners = 3
-        column_distance = int(columns // 2 - 1)
-
-    list_of_spawner_rows = []
-    list_of_spawner_columns = []
-
-    for _ in range(num_spawners):
-        while True:
-            if difficulty != "easy":
-                row = random.randint(0, rows - 1)
-                col = random.randint(0, column_distance)
-                if map_2d[row][col] == "empty" and all(map_2d[row][i] != "spawner" for i in range(columns)):
-                    map_2d[row][col] = "spawner"
+        for _ in range(self.num_spawners):
+            while True:
+                if difficulty != "easy":
+                    row = random.randint(0, rows - 1)
+                    col = random.randint(0, self.column_distance)
+                    if self.map_2d[row][col] == "empty" and all(self.map_2d[row][i] != "spawner" for i in range(columns)):
+                        self.map_2d[row][col] = "spawner"
+                        break
+                else:
+                    row = rows // 2
+                    col = 0
                     break
+
+            self.list_of_spawner_rows.append(row)
+            self.list_of_spawner_columns.append(col)
+
+        self.map_2d[rows // 2][columns - 1] = "base"
+
+        for spawner in range(self.num_spawners):
+            end_row = rows // 2
+            end_column = columns - 1
+            self.map_2d = self.Create_Path(self.list_of_spawner_rows[spawner], self.list_of_spawner_columns[spawner], end_row, end_column)
+
+        self.game_map = self.map_2d
+        return self.map_2d
+
+    def Create_Path(self, spawner_row, spawner_column, end_block_row, end_block_column):
+        road_row = spawner_row
+        vertical_distance_from_base = end_block_row - spawner_row
+        horizontal_distance = end_block_column - spawner_column
+        change_direction_counter = 0
+        square = spawner_column + 1
+        while (road_row != end_block_row or square - change_direction_counter != end_block_column):
+            if self.is_within_bounds(road_row, square - change_direction_counter):
+                self.map_2d[road_row][square - change_direction_counter] = "road"
+
+            if vertical_distance_from_base != 0:
+                direction = random.randint(0, 1)  # 1 means vertical, 0 means horizontal
             else:
-                row = rows // 2
-                col = 0
-                break
+                direction = 0
+            if square - change_direction_counter == end_block_column:
+                direction = 1
 
-        list_of_spawner_rows.append(row)
-        list_of_spawner_columns.append(col)
+            if direction == 1 and vertical_distance_from_base != 0:
+                change_direction_counter += 1
+                if vertical_distance_from_base > 0 and self.is_within_bounds(road_row + 1, square - change_direction_counter):
+                    road_row += 1
+                    vertical_distance_from_base -= 1
+                elif vertical_distance_from_base < 0 and self.is_within_bounds(road_row - 1, square - change_direction_counter):
+                    road_row -= 1
+                    vertical_distance_from_base += 1
+            square = square + 1
+        return self.map_2d
 
-    map_2d[rows // 2][columns - 1] = "base"
+    def is_within_bounds(self, row, column):
+        return 0 <= row < len(self.map_2d) and 0 <= column < len(self.map_2d[0])
 
-    for spawner in range(num_spawners):
-        end_row = rows // 2
-        end_column = columns - 1
-        map_2d = Create_Path(map_2d, list_of_spawner_rows[spawner], list_of_spawner_columns[spawner], end_row,
-                             end_column)
+    def count_adjacent_roads(self, row, column):
+        adjacent_positions = [
+            (row + 1, column),
+            (row - 1, column),
+            (row, column + 1),
+            (row, column - 1)
+        ]
 
-    return map_2d
+        num_of_adjacent_roads = 0
+        for r, c in adjacent_positions:
+            if self.is_within_bounds(r, c) and self.map_2d[r][c] in ["road", "base", "spawner"]:
+                num_of_adjacent_roads += 1
 
-
-def Create_Path(map_2d, spawner_row, spawner_column, end_block_row, end_block_column):
-    road_row = spawner_row
-    vertical_distance_from_base = end_block_row - spawner_row
-    horizontal_distance = end_block_column - spawner_column
-    change_direction_counter = 0
-    square = spawner_column+1
-    while ((road_row != end_block_row or square-change_direction_counter != end_block_column)):
-        if is_within_bounds(road_row, square - change_direction_counter, len(map_2d), len(map_2d[0])):
-            map_2d[road_row][square - change_direction_counter] = "road"
-
-        if vertical_distance_from_base != 0:
-            direction = random.randint(0, 1)  # 1 means vertical, 0 means horizontal
-        else:
-            direction = 0
-        if square-change_direction_counter == end_block_column:
-            direction = 1
-
-        if direction == 1 and vertical_distance_from_base != 0:
-            change_direction_counter += 1
-            if vertical_distance_from_base > 0 and is_within_bounds(road_row + 1, square - change_direction_counter,len(map_2d), len(map_2d[0])):
-                road_row += 1
-                vertical_distance_from_base -= 1
-            elif vertical_distance_from_base < 0 and is_within_bounds(road_row - 1, square - change_direction_counter,len(map_2d), len(map_2d[0])):
-                road_row -= 1
-                vertical_distance_from_base += 1
-        square = square+1
-        if (square == end_block_column):
-            print(road_row, square, vertical_distance_from_base, change_direction_counter, spawner_row, spawner_column, "PRINTING")
-
-    return map_2d
-
-def is_within_bounds(row, column, rows, columns):
-    return 0 <= row < rows and 0 <= column < columns
-def count_adjacent_roads(game_map, row, column, rows, columns):
-    adjacent_positions = [
-        (row + 1, column),
-        (row - 1, column),
-        (row, column + 1),
-        (row, column - 1)
-    ]
-
-    num_of_adjacent_roads = 0
-    for r, c in adjacent_positions:
-        if is_within_bounds(r, c, rows, columns) and game_map[r][c] in ["road", "base", "spawner"]:
-            num_of_adjacent_roads += 1
-
-    return num_of_adjacent_roads
-
-
-def Fix_Path(game_map):
-    invalid_paths = True
-    while (Surrounding_tiles(game_map, tower=cl.ShotgunTower(0, 0), tower_row=rows // 2,tower_column=columns - 1) == 0) or invalid_paths:
-        if Surrounding_tiles(game_map, tower=cl.ShotgunTower(0, 0), tower_row=rows // 2, tower_column=columns - 1) == 0:
-            game_map = create_map(rows, columns, difficulty_level)
-
-        invalid_paths = False
-        for row in range(rows):
-            for column in range(columns):
-                if game_map[row][column] == "road":
-                    num_of_adjacent_roads = count_adjacent_roads(game_map, row, column, rows, columns)
-                    if num_of_adjacent_roads < 2:
-                        invalid_paths = True
-                        break  #Exit the for loop early if an invalid path is found
-            if invalid_paths:
-                break  #Exit the for loop early if an invalid path is found
-
-        if invalid_paths:
-            game_map = create_map(rows, columns, difficulty_level)
-
-    return game_map
-
+        return num_of_adjacent_roads
 
 # Define the dimensions of the map
 rows = Game.Rows
@@ -378,53 +367,51 @@ algorithms = {
     "Expensive_Algorithm": Expensive_Algorithm,
     "SpreadPlacement_Algorithm": SpreadPlacement_Algorithm
 }
+if __name__ == "__main__":
+    for algorithm_name, algorithm in algorithms.items():
+        with open('simulations.json', 'r') as f:
+            simulations = json.load(f)
+        game_number = 0 #an index used to choose which simulation from the list of simulations
+        for game in range(0, 100):
+            total_enemies_killed = 0
+            total_rounds_survived = 0
+            total_time_survived = 0
+            for avg in range(0, 10):
+                # Reset Variables
+                Game.num_of_rounds = 0
+                Game.List_Of_Towers = []
+                Game.List_Of_Enemies = []
+                Player_Money = 50
+                Game.enemies_killed = 0
+                Enemy_Money = 10
+                Game.Player_HP = 1
+                list_of_spawner_columns = []
+                list_of_spawner_rows = []
 
-for algorithm_name, algorithm in algorithms.items():
-    for game in range(0, 100):
-        total_enemies_killed = 0
-        total_rounds_survived = 0
-        total_time_survived = 0
-        for avg in range(0, 10):
-            # Reset Variables
-            Game.num_of_rounds = 0
-            Game.List_Of_Towers = []
-            Game.List_Of_Enemies = []
-            Player_Money = 50
-            Game.enemies_killed = 0
-            Enemy_Money = 10
-            Game.Player_HP = 1
-            list_of_spawner_columns = []
-            list_of_spawner_rows = []
 
-            # Create the map based on the chosen difficulty
-            game_map = create_map(rows, columns, difficulty_level)
-            game_map = Fix_Path(game_map)
-            for row in game_map:
-                print(row)
-            temp_map = copy.deepcopy(game_map)
-            start_time = time.time()
+                start_time = time.time()
 
-            start_time = time.time()
-            Run_Game(game_map, Tower_Algorithm=algorithm, Enemy_Algorithm=Random_Enemy_Algorithm)  # Run the game with the algorithm
-            # Save game stats to JSON
-            end_time = time.time()
-            game_duration = end_time - start_time
-            total_time_survived += game_duration
-            total_enemies_killed += Game.enemies_killed
-            total_rounds_survived += Game.num_of_rounds
-        average_enemies_killed = total_enemies_killed / 10
-        average_time_survived = total_time_survived / 10
-        average_rounds_survived = total_rounds_survived / 10
-        game_stats = {
-            "difficulty": difficulty_level,
-            "rounds": average_rounds_survived,
-            "enemies_killed": average_enemies_killed,
-            "duration_seconds": average_time_survived
-        }
-        print(game_stats)
-        filename = f"game_results_{algorithm_name}.json"
-        with open(filename, "a") as f:
-            json.dump(game_stats, f)
-            f.write("\n")
+                start_time = time.time()
+                Run_Game(game_map, Tower_Algorithm=algorithm, Enemy_Algorithm=Random_Enemy_Algorithm)  # Run the game with the algorithm
+                # Save game stats to JSON
+                end_time = time.time()
+                game_duration = end_time - start_time
+                total_time_survived += game_duration
+                total_enemies_killed += Game.enemies_killed
+                total_rounds_survived += Game.num_of_rounds
+            average_enemies_killed = total_enemies_killed / 10
+            average_time_survived = total_time_survived / 10
+            average_rounds_survived = total_rounds_survived / 10
+            game_stats = {
+                "difficulty": difficulty_level,
+                "rounds": average_rounds_survived,
+                "enemies_killed": average_enemies_killed,
+                "duration_seconds": average_time_survived
+            }
+            print(game_stats)
+            filename = f"game_results_{algorithm_name}.json"
+            with open(filename, "a") as f:
+                json.dump(game_stats, f)
+                f.write("\n")
 
-    print("THE CODE RUN SUCCESFULLY")
+        print("THE CODE RUN SUCCESFULLY")
