@@ -1,6 +1,8 @@
 import json
 import random
 import pickle
+import time
+
 import classes
 from trying import MapGenerator, Random_Enemy_Generator_Algorithm
 import Game
@@ -8,14 +10,15 @@ import Game
 rows = Game.Rows
 columns = Game.Columns
 
-def generate_simulations(num_simulations=10):
+def generate_simulations(num_simulations=100):
     simulations = []
     map_gen = MapGenerator()
     for _ in range(num_simulations):
+        random.seed(time.time() + random.randint(0, 1000))
+        map_gen = MapGenerator()
         simulation = []
-
         game_map = map_gen.create_map(rows, columns, difficulty="hard")
-        simulation.append(map_gen)
+        simulation.append(map_gen.to_dict())
         list_of_enemies = Random_Enemy_Generator_Algorithm(game_map)
         simulation.append(list_of_enemies)
         simulations.append(simulation)
