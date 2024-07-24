@@ -24,7 +24,7 @@ def Random_Enemy_Generator_Algorithm(game_map):
     Enemy_Options = cl.List_Of_Enemies_Options
     enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
     enemy_instance: cl.Enemy
-    for rounds in range(0,10000):
+    for rounds in range(0,1000):
         enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
         enemy_name = enemy_instance.name
         Predetermined_List_Of_Enemies.append(enemy_name)
@@ -50,8 +50,6 @@ def Random_Enemy_Algorithm(game_map):
             game_map = Create_Enemy(game_map, enemy)
             Enemy_Money = Enemy_Money - enemy.money_drop
             Enemy_Options.pop(i)
-            if (len(Enemy_Options) < 9800):
-                print("sxcxadsa")
     return game_map
 
 
@@ -234,12 +232,13 @@ class MapGenerator:
             self.list_of_spawner_rows.append(row)
             self.list_of_spawner_columns.append(col)
 
-        self.map_2d[rows // 2][columns - 1] = "base"
 
         for spawner in range(self.num_spawners):
             end_row = rows // 2
             end_column = columns - 1
             self.map_2d = self.Create_Path(self.list_of_spawner_rows[spawner], self.list_of_spawner_columns[spawner], end_row, end_column)
+
+        self.map_2d[rows // 2][columns - 1] = "base"
 
         return self.map_2d
 
@@ -328,21 +327,20 @@ difficulty_level = "hard" #input("write the difficulty you want").lower()
 
 
 def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
-     while True: #MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
-        if (len(Game.List_Of_Towers) > 100):
-            print("sua")
-        if (len(Enemy_Options) == 0):
-            print("Fix enemy_options")
+    print(game_map)
+    while True: #MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
         num_of_enemies = len(Game.List_Of_Enemies)
         temp_num_of_enemies = len(Game.List_Of_Enemies)
         for Tower in range(0,len(Game.List_Of_Towers)):
             game_map = Game.List_Of_Towers[Tower].Check_Attack(game_map)
-            num_of_enemies = len(Game.List_Of_Enemies)
+        num_of_enemies = len(Game.List_Of_Enemies)
         for enemy in range(0, len(Game.List_Of_Enemies)):
-            game_map = Game.List_Of_Enemies[enemy].Move(game_map)
+            if enemy < len(Game.List_Of_Enemies):
+                temp = Game.List_Of_Enemies[enemy]
+                game_map = Game.List_Of_Enemies[enemy].Move(game_map)
             if (Game.Player_HP <= 0):
                 break
-            if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0):
+            if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0 and enemy < len(Game.List_Of_Enemies)):
                 game_map = Game.List_Of_Enemies[enemy].Move(game_map)
                 num_of_enemies = len(Game.List_Of_Enemies)
         game_map = Rounds(game_map,Tower_Algorithm=Tower_Algorithm,Enemy_Algorithm=Enemy_Algorithm)
