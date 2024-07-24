@@ -61,6 +61,12 @@ class Enemy:
         return row, column
 
     def Move(self, map_2d: list):
+        #this is a temporary fix to the problem where the base gets deleted by a enemy who is in the same location as the base but doesnt get erased for some reason
+        if (map_2d[self.row][self.column] == "base"):
+            map_2d = self.Destroy_Enemy(map_2d)
+            map_2d[self.row][self.column] = "base"
+            return map_2d
+        #end of the temporary fix
         if Game.num_of_rounds % self.speed*4 == 0:
             row = self.row
             column = self.column
@@ -92,7 +98,6 @@ class Enemy:
             Game.Player_HP = Game.Player_HP - self.base_damage
         else:
             Game.enemies_killed = Game.enemies_killed+1
-        print("DEADHDISFSD")
         return map_2d
 
 class Tower:
@@ -124,7 +129,7 @@ class Tower:
         if Game.num_of_rounds % (self.firerate*4) == 0:
             for row in range(min(self.row + self.attack_range, Game.Rows-1), max(self.row - self.attack_range,0), -1):
                 for column in range(min(self.column + self.attack_range, Game.Columns-1), max(self.column - self.attack_range, 0), -1):
-                    if isinstance(map_2d[row][column], Enemy):
+                    if isinstance(map_2d[row][column], Enemy) and map_2d[row][column] in Game.List_Of_Enemies:
                         game_map = self.Attack_Enemy(map_2d[row][column], map_2d)
                         return game_map
 
