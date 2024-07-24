@@ -52,6 +52,11 @@ def Random_Enemy_Algorithm(game_map):
             Enemy_Options.pop(i)
     return game_map
 
+def All_Money_Algorithm(game_map):
+    global Player_Money, towers
+    while (Player_Money > cl.NormalTower(0,0).price and Check_Empty_Tiles(game_map) > 0):
+        game_map = Random_Algorithm(game_map)
+    return game_map
 
 def Random_Algorithm(game_map):
     global Player_Money, towers
@@ -88,9 +93,10 @@ def Blocks_In_Range(temp_map, tower): # this is used to mark blocks in the map a
     return temp_map
 
 def SpreadPlacement_Algorithm(game_map):
-    global towers, cheapest, check_SpreadAlgorithm, Player_Money, temp_map
+    global towers, cheapest, check_SpreadAlgorithm, Player_Money
     check_SpreadAlgorithm = True
     num_of_tiles = 0
+    temp_map = copy.deepcopy(game_map)
     if (Check_Empty_Tiles(game_map) == 0):
         return game_map
     if (Check_No_Towers(game_map)):
@@ -105,11 +111,12 @@ def SpreadPlacement_Algorithm(game_map):
             if Player_Money < cheapest.price:
                 return game_map
         tower.row, tower.column = Best_Location(temp_map, tower)
-        if (tower.row == False):
+        if (tower.row == rows):
             return game_map
         Player_Money = Player_Money - tower.price
         game_map[tower.row][tower.column] = tower
         Game.List_Of_Towers.append(tower)
+    print(game_map)
     return game_map
 
 def Expensive_Algorithm(game_map):
@@ -117,7 +124,7 @@ def Expensive_Algorithm(game_map):
     while (Game.Player_Money >= cheapest.price):
         if (Check_Empty_Tiles(game_map) == 0):
             return game_map
-        for tower_price in range(len(towers) - 1, 0, -1):
+        for tower_price in range(len(towers) - 1, -1, -1):
             if (Game.Player_Money >= towers[tower_price].price):
                 tower = towers[tower_price]
                 tower.row, tower.column = Best_Location(game_map, tower)
@@ -135,18 +142,22 @@ def Best_Location(game_map, tower: Tower):
     best_location_column = 0
     num_of_tiles = 0
     biggest_num_of_tiles = 0
+    temp_row = 0
+    temp_column = 0
     for row in range(0, rows):
         for column in range(0, columns):
             if (game_map[row][column] == "empty"):
-                if (check_SpreadAlgorithm):
-                    num_of_tiles = Surrounding_tiles_SpreadAlgorithm(game_map, tower)
-                    check_SpreadAlgorithm = False
-                else:
-                    num_of_tiles = Surrounding_tiles(game_map, tower, row, column)
+                temp_column = column
+                temp_row = row
+                num_of_tiles = Surrounding_tiles(game_map, tower, row, column)
             if num_of_tiles > biggest_num_of_tiles:
                 biggest_num_of_tiles = num_of_tiles
                 best_location_row = row
                 best_location_column = column
+    #
+    if (best_location_row == 0 and best_location_column == 0):
+        return temp_row, temp_column
+    #
     if (best_location_row == 0 and best_location_column == 0 and game_map[best_location_row][best_location_column] != "empty"):
         return rows, columns
     return best_location_row, best_location_column
@@ -157,6 +168,8 @@ def Surrounding_tiles_SpreadAlgorithm(game_map, tower: Tower):
         for column in range(max(0, tower.column - tower.attack_range), min(columns, tower.column + tower.attack_range + 1)):
             if ((game_map[row][column] in ["road", "spawner"] or isinstance(game_map[row][column], cl.Enemy))):
                 num_of_tiles += 1
+    if (num_of_tiles == 0):
+        pass
     return num_of_tiles
 
 def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
@@ -336,7 +349,6 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
         num_of_enemies = len(Game.List_Of_Enemies)
         for enemy in range(0, len(Game.List_Of_Enemies)):
             if enemy < len(Game.List_Of_Enemies):
-                temp = Game.List_Of_Enemies[enemy]
                 game_map = Game.List_Of_Enemies[enemy].Move(game_map)
             if (Game.Player_HP <= 0):
                 break
@@ -346,6 +358,7 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
         game_map = Rounds(game_map,Tower_Algorithm=Tower_Algorithm,Enemy_Algorithm=Enemy_Algorithm)
         if (Game.Player_HP <= 0):
             print("YOU LOSE!")
+            print(game_map)
             break
 
 # Validate that each spawner has a path to the base
@@ -356,6 +369,7 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
 def Rounds(game_map, Tower_Algorithm, Enemy_Algorithm):
     global Player_Money, Enemy_Money, Round_time, Enemies
     if Game.num_of_rounds % 4 == 0:
+        game_map[rows//2][columns-1] = "base"
         game_map = Enemy_Algorithm(game_map)
         game_map = Tower_Algorithm(game_map)
     if (Game.num_of_rounds % 40 == 0):
@@ -387,9 +401,10 @@ def Convert_map_to_visual_map(matrix):
 
 
 algorithms = {
+    "All_Money_Algorithm": All_Money_Algorithm,
     "Random_Algorithm": Random_Algorithm,
     "Expensive_Algorithm": Expensive_Algorithm,
-    "SpreadPlacement_Algorithm": SpreadPlacement_Algorithm
+    "SpreadPlacement_Algorithm": SpreadPlacement_Algorithm,
 }
 if __name__ == "__main__":
     for algorithm_name, algorithm in algorithms.items():
@@ -401,6 +416,7 @@ if __name__ == "__main__":
             total_rounds_survived = 0
             total_time_survived = 0
             for avg in range(0, 10):
+                print("game number = ",game_number)
                 # Reset Variables
                 Game.num_of_rounds = 0
                 Game.List_Of_Towers = []
