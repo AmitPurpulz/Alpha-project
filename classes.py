@@ -62,7 +62,8 @@ class Enemy:
 
     def Move(self, map_2d: list):
         #this is a temporary fix to the problem where the base gets deleted by a enemy who is in the same location as the base but doesnt get erased for some reason
-        if (map_2d[self.row][self.column] == "base"):
+        if (self.row == Game.Rows//2 and self.column == Game.Columns-1):
+            print("THIS IS ON BASE")
             map_2d = self.Destroy_Enemy(map_2d)
             map_2d[self.row][self.column] = "base"
             return map_2d
@@ -137,19 +138,19 @@ class Tower:
 
 class NormalTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=1, firerate=1, attack_range=2, price=10, row=row, column=column)
+        super().__init__(damage=5, firerate=1, attack_range=2, price=10, row=row, column=column)
 
 class ShotgunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=3, firerate=2, attack_range=1, price=20, row=row, column=column)
+        super().__init__(damage=8, firerate=2, attack_range=1, price=20, row=row, column=column)
 
 class MachinegunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=1, firerate=0.5, attack_range=2, price=30, row=row, column=column)
+        super().__init__(damage=10, firerate=0.5, attack_range=2, price=30, row=row, column=column)
 
 class SniperTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=5, firerate=4, attack_range=4, price=40, row=row, column=column)
+        super().__init__(damage=20, firerate=4, attack_range=4, price=40, row=row, column=column)
 
 class MinigunTower(Tower):
     def __init__(self, row, column):
