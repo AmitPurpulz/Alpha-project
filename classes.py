@@ -1,8 +1,9 @@
+import copy
 import random
 import time
 
 import Game
-
+Player_Money = Game.Player_Money
 class Enemy:
     def __init__(self, name, health, speed, money_drop, base_damage, row, column):
         self.name = name
@@ -92,6 +93,8 @@ class Enemy:
     def Destroy_Enemy(self, map_2d):
         if self.OnSpawner:
             map_2d[self.row][self.column] = "spawner"
+        elif self.row == Game.Rows//2 and self.column == Game.Columns-1:
+            map_2d[self.row][self.column] = "base"
         else:
             map_2d[self.row][self.column] = "road"
         Game.List_Of_Enemies.pop(Game.List_Of_Enemies.index(self))
@@ -118,11 +121,12 @@ class Tower:
         return game_map
 
     def Attack_Enemy(self, enemy: Enemy, map_2d):
+        global Player_Money
         game_map = map_2d
         enemy.health = enemy.health - self.damage
         if enemy.health <= 0:
             game_map = enemy.Destroy_Enemy(map_2d)
-            Game.Player_Money = Game.Player_Money+enemy.money_drop
+            Player_Money = Player_Money + enemy.money_drop
         return game_map
 
     def Check_Attack(self, map_2d):
@@ -138,19 +142,19 @@ class Tower:
 
 class NormalTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=5, firerate=1, attack_range=2, price=10, row=row, column=column)
+        super().__init__(damage=1, firerate=1, attack_range=2, price=10, row=row, column=column)
 
 class ShotgunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=8, firerate=2, attack_range=1, price=20, row=row, column=column)
+        super().__init__(damage=3, firerate=2, attack_range=1, price=20, row=row, column=column)
 
 class MachinegunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=10, firerate=0.5, attack_range=2, price=30, row=row, column=column)
+        super().__init__(damage=1, firerate=0.5, attack_range=2, price=30, row=row, column=column)
 
 class SniperTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=20, firerate=4, attack_range=4, price=40, row=row, column=column)
+        super().__init__(damage=5, firerate=4, attack_range=4, price=40, row=row, column=column)
 
 class MinigunTower(Tower):
     def __init__(self, row, column):
@@ -166,11 +170,6 @@ towers = {
     'minigun_tower': MinigunTower(0, 0),
 }
 
-for tower_name, tower_instance in towers.items():
-    print(f"{tower_name}:")
-    for attribute, value in vars(tower_instance).items():
-        print(f"    {attribute}: {value}")
-    print()
 
 class NormalEnemy(Enemy):
     def __init__(self, row, column):
@@ -190,15 +189,22 @@ class BossEnemy(Enemy):
 
 List_Of_Enemies_Options = [NormalEnemy(0,0), FastEnemy(0,0), StrongEnemy(0,0), BossEnemy(0,0)]
 List_Of_Towers_Options = [NormalTower, ShotgunTower, MachinegunTower, SniperTower, MinigunTower]
-# Example usage
-normal_enemy_instance = NormalEnemy(5, 5)
-print(vars(normal_enemy_instance))
 
-fast_enemy_instance = FastEnemy(5, 5)
-print(vars(fast_enemy_instance))
+if __name__ == "main":
+    for tower_name, tower_instance in towers.items():
+        print(f"{tower_name}:")
+        for attribute, value in vars(tower_instance).items():
+            print(f"    {attribute}: {value}")
+        print()
 
-strong_enemy_instance = StrongEnemy(5, 5)
-print(vars(strong_enemy_instance))
+    normal_enemy_instance = NormalEnemy(5, 5)
+    print(vars(normal_enemy_instance))
 
-boss_enemy_instance = BossEnemy(5, 5)
-print(vars(boss_enemy_instance))
+    fast_enemy_instance = FastEnemy(5, 5)
+    print(vars(fast_enemy_instance))
+
+    strong_enemy_instance = StrongEnemy(5, 5)
+    print(vars(strong_enemy_instance))
+
+    boss_enemy_instance = BossEnemy(5, 5)
+    print(vars(boss_enemy_instance))
