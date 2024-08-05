@@ -18,6 +18,13 @@ Enemies = (cl.List_Of_Enemies_Options)
 cheapest = towers[0]
 check_SpreadAlgorithm = False
 Enemy_Options = []
+Money_Percentage = 0
+def Best_Money_Usage_Algorithm(game_map): #this algorithm is a local search algorithm whose purpose is to find the most optimal value of how much percent of the Player's money the algorithm should use every round
+    global Player_Money, Money_Percentage
+    total_money = Player_Money
+    while Player_Money > total_money * (1-Money_Percentage) and Player_Money > cheapest.price and Check_Empty_Tiles(game_map) > 0:
+        game_map = Random_Algorithm(game_map)
+    return game_map
 def Random_Enemy_Generator_Algorithm(game_map):
     global Enemy_Money
     Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
@@ -35,7 +42,8 @@ def Random_Enemy_Algorithm(game_map):
     normal_enemy_instance = NormalEnemy(0, 0)
     i = 0
     enemy = 0
-    while (normal_enemy_instance.money_drop < Enemy_Money):
+    while (normal_enemy_instance.money_drop < Enemy_Money and Num_Of_Spawners_Available(game_map) > 0):
+        Enemies = copy.deepcopy(cl.List_Of_Enemies_Options)
         if (i == len(Enemy_Options)):
             break
         enemy_name = Enemy_Options[i]
@@ -60,12 +68,13 @@ def All_Money_Algorithm(game_map):
 
 def Random_Algorithm(game_map):
     global Player_Money, towers
-    Tower_Options = towers
+    Tower_Options = copy.deepcopy(towers)
     normal_tower_instance = NormalTower(0, 0)
     tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
     if (Check_Empty_Tiles(game_map) == 0):
         return game_map
     while (tower.price > Player_Money):
+        Tower_Options = copy.deepcopy(towers)
         tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
         if Player_Money < normal_tower_instance.price:
             return game_map
@@ -121,16 +130,16 @@ def SpreadPlacement_Algorithm(game_map):
 
 def Expensive_Algorithm(game_map):
     global towers, cheapest
-    while (Game.Player_Money >= cheapest.price):
+    while (Player_Money >= cheapest.price):
         if (Check_Empty_Tiles(game_map) == 0):
             return game_map
         for tower_price in range(len(towers) - 1, -1, -1):
-            if (Game.Player_Money >= towers[tower_price].price):
+            if (Player_Money >= towers[tower_price].price):
                 tower = towers[tower_price]
                 tower.row, tower.column = Best_Location(game_map, tower)
                 if (tower.row == False):
                     return game_map
-                Game.Player_Money = Game.Player_Money - towers[tower_price].price
+                Player_Money = Player_Money - towers[tower_price].price
                 game_map[tower.row][tower.column] = tower
                 Game.List_Of_Towers.append(tower)
                 break
@@ -142,24 +151,20 @@ def Best_Location(game_map, tower: Tower):
     best_location_column = 0
     num_of_tiles = 0
     biggest_num_of_tiles = 0
-    temp_row = 0
-    temp_column = 0
+    list_of_empty_tiles = []
     for row in range(0, rows):
         for column in range(0, columns):
             if (game_map[row][column] == "empty"):
-                temp_column = column
-                temp_row = row
+                list_of_empty_tiles.append((row,column))
                 num_of_tiles = Surrounding_tiles(game_map, tower, row, column)
-            if num_of_tiles > biggest_num_of_tiles:
-                biggest_num_of_tiles = num_of_tiles
-                best_location_row = row
-                best_location_column = column
-    #
-    if (best_location_row == 0 and best_location_column == 0):
-        return temp_row, temp_column
-    #
+                if num_of_tiles > biggest_num_of_tiles:
+                    biggest_num_of_tiles = num_of_tiles
+                    best_location_row = row
+                    best_location_column = column
+
     if (best_location_row == 0 and best_location_column == 0 and game_map[best_location_row][best_location_column] != "empty"):
-        return rows, columns
+        row, column = list_of_empty_tiles[random.randint(0,len(list_of_empty_tiles)-1)]
+        return row, column
     return best_location_row, best_location_column
 
 def Surrounding_tiles_SpreadAlgorithm(game_map, tower: Tower):
@@ -184,6 +189,10 @@ def Create_Enemy(map_2d, enemy):
     enemy_location_index = random.randint(0, num_spawners - 1)
     enemy.row = list_of_spawner_rows[enemy_location_index]
     enemy.column = list_of_spawner_columns[enemy_location_index]
+    while (map_2d[enemy.row][enemy.column] != "spawner"):
+        enemy_location_index = random.randint(0, num_spawners - 1)
+        enemy.row = list_of_spawner_rows[enemy_location_index]
+        enemy.column = list_of_spawner_columns[enemy_location_index]
     map_2d[enemy.row][enemy.column] = enemy
     enemy.OnSpawner = True
     enemy_health_increase_rate = 0.01
@@ -200,6 +209,15 @@ def Check_Empty_Tiles(game_map):
             if tile == "empty":
                 num_of_empty_tiles += 1
     return num_of_empty_tiles
+
+def Num_Of_Spawners_Available(game_map):
+    num_of_spawner_tiles = 0
+    for row in game_map:
+        for tile in row:
+            if tile == "spawner":
+                num_of_spawner_tiles += 1
+    return num_of_spawner_tiles
+
 class MapGenerator:
     def __init__(self):
         self.list_of_spawner_rows = []
@@ -301,6 +319,8 @@ class MapGenerator:
 
         return num_of_adjacent_roads
 
+
+
 # Define the dimensions of the map
 rows = Game.Rows
 columns = Game.Columns
@@ -338,14 +358,27 @@ if __name__ == "__main__":
 # Set the difficulty level ('easy', 'medium', or 'hard')
 difficulty_level = "hard" #input("write the difficulty you want").lower()
 
-
+def Fix_Map_Error(game_map):
+    for row in game_map:
+        for tile in row:
+            if isinstance(tile, cl.Enemy):
+                if tile in Game.List_Of_Enemies:
+                    pass
+                else:
+                    game_map[tile.row][tile.column] = "road"
+    for i in range(0,num_spawners):
+        if isinstance(game_map[list_of_spawner_rows[i]][list_of_spawner_columns[i]], Enemy) or  game_map[list_of_spawner_rows[i]][list_of_spawner_columns[i]] == "spawner":
+            pass
+        else:
+            game_map[list_of_spawner_rows[i]][list_of_spawner_columns[i]] = "spawner"
+    return game_map
 def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
-    print(game_map)
     while True: #MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
         num_of_enemies = len(Game.List_Of_Enemies)
         temp_num_of_enemies = len(Game.List_Of_Enemies)
         for Tower in range(0,len(Game.List_Of_Towers)):
             game_map = Game.List_Of_Towers[Tower].Check_Attack(game_map)
+            game_map = Fix_Map_Error(game_map)
         num_of_enemies = len(Game.List_Of_Enemies)
         for enemy in range(0, len(Game.List_Of_Enemies)):
             if enemy < len(Game.List_Of_Enemies):
@@ -355,10 +388,13 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
             if (len(Game.List_Of_Enemies) < num_of_enemies and len(Game.List_Of_Enemies) > 0 and enemy < len(Game.List_Of_Enemies)):
                 game_map = Game.List_Of_Enemies[enemy].Move(game_map)
                 num_of_enemies = len(Game.List_Of_Enemies)
-        game_map = Rounds(game_map,Tower_Algorithm=Tower_Algorithm,Enemy_Algorithm=Enemy_Algorithm)
-        if (Game.Player_HP <= 0):
+            game_map = Fix_Map_Error(game_map)
+        if (Game.Player_HP > 0):
+            game_map = Rounds(game_map,Tower_Algorithm=Tower_Algorithm,Enemy_Algorithm=Enemy_Algorithm)
+        else:
             print("YOU LOSE!")
             print(game_map)
+            print(Enemy_Options)
             break
 
 # Validate that each spawner has a path to the base
@@ -407,62 +443,97 @@ algorithms = {
     "SpreadPlacement_Algorithm": SpreadPlacement_Algorithm,
 }
 if __name__ == "__main__":
-    for algorithm_name, algorithm in algorithms.items():
-        with open('simulations.json', 'r') as f:
-            simulations = json.load(f)
-        game_number = 0 #an index used to choose which simulation from the list of simulations
-        for game in range(0, 100):
-            total_enemies_killed = 0
-            total_rounds_survived = 0
-            total_time_survived = 0
-            for avg in range(0, 10):
-                print("game number = ",game_number)
-                # Reset Variables
-                Game.num_of_rounds = 0
-                Game.List_Of_Towers = []
-                Game.List_Of_Enemies = []
-                Player_Money = 50
-                Game.enemies_killed = 0
-                Enemy_Money = 10
-                Game.Player_HP = 1
-                list_of_spawner_columns = []
-                list_of_spawner_rows = []
+    with open('simulations.json', 'r') as f:
+        simulations = json.load(f)
+    Which_Test = input().lower()
+    if (Which_Test == "algorithms"):
+        for algorithm_name, algorithm in algorithms.items():
+            game_number = 0 #an index used to choose which simulation from the list of simulations
+            for game in range(0, 100):
+                total_enemies_killed = 0
+                total_rounds_survived = 0
+                total_time_survived = 0
+                for avg in range(0, 10):
+                    print("game number = ",game_number)
+                    # Reset Variables
+                    Game.num_of_rounds = 0
+                    Game.List_Of_Towers = []
+                    Game.List_Of_Enemies = []
+                    Player_Money = 50
+                    Game.enemies_killed = 0
+                    Enemy_Money = 10
+                    Game.Player_HP = 1
+                    list_of_spawner_columns = []
+                    list_of_spawner_rows = []
 
-                map_gen = simulations[game_number][0]
-                map_gen : dict
-                map_gen_atributes = list(map_gen.values())
-                list_of_spawner_rows = map_gen_atributes[0]
-                list_of_spawner_columns = map_gen_atributes[1]
-                num_spawners = map_gen_atributes[2]
-                game_map = map_gen_atributes[3]
-                print(map_gen)
-                print(map_gen_atributes)
-                Enemy_Options = simulations[game_number][1]
-                start_time = time.time()
+                    map_gen = simulations[game_number][0]
+                    map_gen : dict
+                    map_gen_atributes = list(map_gen.values())
+                    list_of_spawner_rows = map_gen_atributes[0]
+                    list_of_spawner_columns = map_gen_atributes[1]
+                    num_spawners = map_gen_atributes[2]
+                    game_map = map_gen_atributes[3]
+                    Enemy_Options = simulations[game_number][1]
+                    start_time = time.time()
 
-                start_time = time.time()
-                Run_Game(game_map, Tower_Algorithm=algorithm, Enemy_Algorithm=Random_Enemy_Algorithm)  # Run the game with the algorithm
-                # Save game stats to JSON
-                end_time = time.time()
-                game_duration = end_time - start_time
-                total_time_survived += game_duration
-                total_enemies_killed += Game.enemies_killed
-                total_rounds_survived += Game.num_of_rounds
-                game_number = game_number +1
+                    start_time = time.time()
+                    Run_Game(game_map, Tower_Algorithm=algorithm, Enemy_Algorithm=Random_Enemy_Algorithm)  # Run the game with the algorithm
+                    # Save game stats to JSON
+                    end_time = time.time()
+                    game_duration = end_time - start_time
+                    total_time_survived += game_duration
+                    total_enemies_killed += Game.enemies_killed
+                    total_rounds_survived += Game.num_of_rounds
+                    game_number = game_number +1
 
-            average_enemies_killed = total_enemies_killed / 10
-            average_time_survived = total_time_survived / 10
-            average_rounds_survived = total_rounds_survived / 10
-            game_stats = {
-                "difficulty": difficulty_level,
-                "rounds": average_rounds_survived,
-                "enemies_killed": average_enemies_killed,
-                "duration_seconds": average_time_survived
-            }
-            print(game_stats)
-            filename = f"game_results_{algorithm_name}.json"
-            with open(filename, "a") as f:
-                json.dump(game_stats, f)
-                f.write("\n")
-
-        print("THE CODE RUN SUCCESFULLY")
+                average_enemies_killed = total_enemies_killed / 10
+                average_time_survived = total_time_survived / 10
+                average_rounds_survived = total_rounds_survived / 10
+                game_stats = {
+                    "difficulty": difficulty_level,
+                    "rounds": average_rounds_survived,
+                    "enemies_killed": average_enemies_killed,
+                    "duration_seconds": average_time_survived
+                }
+                print(game_stats)
+                filename = f"game_results_{algorithm_name}.json"
+                with open(filename, "a") as f:
+                    json.dump(game_stats, f)
+                    f.write("\n")
+    else:
+        Best_Money_Percentage = 0.5
+        previous_enemies_killed = 0
+        Money_Percentage = 0.5
+        game = 0
+        for game2 in range(0,1000):
+            Game.num_of_rounds = 0
+            Game.List_Of_Towers = []
+            Game.List_Of_Enemies = []
+            Player_Money = 50
+            Game.enemies_killed = 0
+            Enemy_Money = 10
+            Game.Player_HP = 1
+            list_of_spawner_columns = []
+            list_of_spawner_rows = []
+            map_gen = copy.deepcopy(simulations[game][0])
+            map_gen: dict
+            map_gen_atributes = copy.deepcopy(list(map_gen.values()))
+            list_of_spawner_rows = map_gen_atributes[0]
+            list_of_spawner_columns = map_gen_atributes[1]
+            num_spawners = map_gen_atributes[2]
+            game_map = map_gen_atributes[3]
+            Enemy_Options = copy.deepcopy(simulations[game][1])
+            start_time = time.time()
+            Run_Game(game_map, Tower_Algorithm=Best_Money_Usage_Algorithm,Enemy_Algorithm=Random_Enemy_Algorithm)  # Run the game with the algorithm
+            # Save game stats to JSON
+            end_time = time.time()
+            game_duration = end_time - start_time
+            if (Game.enemies_killed > previous_enemies_killed):
+                Best_Money_Percentage = Money_Percentage
+                previous_enemies_killed = Game.enemies_killed
+            else:
+                Money_Percentage = Best_Money_Percentage
+            Money_Percentage += random.uniform(-0.1,0.1)
+            print(Game.enemies_killed, Game.num_of_rounds)
+        print(Best_Money_Percentage)
+    print("THE CODE RUN SUCCESFULLY")
