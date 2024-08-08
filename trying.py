@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import Game
-from Game import Enemy_Money, Player_Money
+from Game import Enemy_Money
 import classes as cl
 from classes import NormalTower, NormalEnemy, Tower, Enemy
 import plotly as pl
@@ -20,9 +20,9 @@ check_SpreadAlgorithm = False
 Enemy_Options = []
 Money_Percentage = 0
 def Best_Money_Usage_Algorithm(game_map): #this algorithm is a local search algorithm whose purpose is to find the most optimal value of how much percent of the Player's money the algorithm should use every round
-    global Player_Money, Money_Percentage
-    total_money = Player_Money
-    while Player_Money > total_money * (1-Money_Percentage) and Player_Money > cheapest.price and Check_Empty_Tiles(game_map) > 0:
+    global Money_Percentage
+    total_money = Game.Player_Money
+    while Game.Player_Money > total_money * (1-Money_Percentage) and Game.Player_Money > cheapest.price and Check_Empty_Tiles(game_map) > 0:
         game_map = Random_Algorithm(game_map)
     return game_map
 def Random_Enemy_Generator_Algorithm(game_map):
@@ -61,27 +61,27 @@ def Random_Enemy_Algorithm(game_map):
     return game_map
 
 def All_Money_Algorithm(game_map):
-    global Player_Money, towers
-    while (Player_Money > cl.NormalTower(0,0).price and Check_Empty_Tiles(game_map) > 0):
+    global towers
+    while (Game.Player_Money > cl.NormalTower(0,0).price and Check_Empty_Tiles(game_map) > 0):
         game_map = Random_Algorithm(game_map)
     return game_map
 
 def Random_Algorithm(game_map):
-    global Player_Money, towers
+    global towers
     Tower_Options = copy.deepcopy(towers)
     normal_tower_instance = NormalTower(0, 0)
     tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
     if (Check_Empty_Tiles(game_map) == 0):
         return game_map
-    while (tower.price > Player_Money):
+    while (tower.price > Game.Player_Money):
         Tower_Options = copy.deepcopy(towers)
         tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
-        if Player_Money < normal_tower_instance.price:
+        if Game.Player_Money < normal_tower_instance.price:
             return game_map
     tower.row, tower.column = Best_Location(game_map, tower)
     if (tower.row == rows):
         return game_map
-    Player_Money = Player_Money - tower.price
+    Game.Player_Money = Game.Player_Money - tower.price
     game_map[tower.row][tower.column] = tower
     Game.List_Of_Towers.append(tower)
     return game_map
@@ -102,7 +102,7 @@ def Blocks_In_Range(temp_map, tower): # this is used to mark blocks in the map a
     return temp_map
 
 def SpreadPlacement_Algorithm(game_map):
-    global towers, cheapest, check_SpreadAlgorithm, Player_Money
+    global towers, cheapest, check_SpreadAlgorithm
     check_SpreadAlgorithm = True
     num_of_tiles = 0
     temp_map = copy.deepcopy(game_map)
@@ -115,14 +115,14 @@ def SpreadPlacement_Algorithm(game_map):
             temp_map = Blocks_In_Range(temp_map, tower)
         num_of_tiles = 0
         tower = towers[random.randint(0, len(cl.towers) - 1)]
-        while (tower.price > Player_Money):
+        while (tower.price > Game.Player_Money):
             tower = towers[random.randint(0, len(cl.towers) - 1)]
-            if Player_Money < cheapest.price:
+            if Game.Player_Money < cheapest.price:
                 return game_map
         tower.row, tower.column = Best_Location(temp_map, tower)
         if (tower.row == rows):
             return game_map
-        Player_Money = Player_Money - tower.price
+        Game.Player_Money = Game.Player_Money - tower.price
         game_map[tower.row][tower.column] = tower
         Game.List_Of_Towers.append(tower)
     print(game_map)
@@ -130,20 +130,34 @@ def SpreadPlacement_Algorithm(game_map):
 
 def Expensive_Algorithm(game_map):
     global towers, cheapest
-    while (Player_Money >= cheapest.price):
+    while (Game.Player_Money >= cheapest.price):
         if (Check_Empty_Tiles(game_map) == 0):
             return game_map
         for tower_price in range(len(towers) - 1, -1, -1):
-            if (Player_Money >= towers[tower_price].price):
+            if (Game.Player_Money >= towers[tower_price].price):
                 tower = towers[tower_price]
                 tower.row, tower.column = Best_Location(game_map, tower)
                 if (tower.row == False):
                     return game_map
-                Player_Money = Player_Money - towers[tower_price].price
+                Game.Player_Money = Game.Player_Money - towers[tower_price].price
                 game_map[tower.row][tower.column] = tower
                 Game.List_Of_Towers.append(tower)
                 break
     return game_map
+
+def Upgrade_Towers_Algorithm(game_map):
+    Upgrades_Available = False
+    for tower in Game.List_Of_Towers:
+        if (not tower.upgrade_1) and Game.Player_Money>tower.upgrade_1_cost:
+            tower.Upgrade_Tower()
+            Upgrades_Available = True
+        elif (not tower.upgrade_2) and Game.Player_Money>tower.upgrade_2_cost:
+            tower.Upgrade_Tower()
+            Upgrades_Available = True
+    if (not Upgrades_Available):
+        game_map = Random_Algorithm(game_map)
+    return game_map
+
 
 def Best_Location(game_map, tower: Tower):
     global check_SpreadAlgorithm
@@ -185,6 +199,11 @@ def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
                 num_of_tiles += 1
     return num_of_tiles
 
+def Remake_Enemy_list():
+    global Enemy_Options, game
+    if (len(Enemy_Options) == 0):
+        Enemy_Options = copy.deepcopy(simulations[game][1])
+        print("HAD TO REMAKE THE LIST")
 def Create_Enemy(map_2d, enemy):
     enemy_location_index = random.randint(0, num_spawners - 1)
     enemy.row = list_of_spawner_rows[enemy_location_index]
@@ -376,6 +395,7 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
     while True: #MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
         num_of_enemies = len(Game.List_Of_Enemies)
         temp_num_of_enemies = len(Game.List_Of_Enemies)
+        Remake_Enemy_list()
         for Tower in range(0,len(Game.List_Of_Towers)):
             game_map = Game.List_Of_Towers[Tower].Check_Attack(game_map)
             game_map = Fix_Map_Error(game_map)
@@ -389,12 +409,11 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
                 game_map = Game.List_Of_Enemies[enemy].Move(game_map)
                 num_of_enemies = len(Game.List_Of_Enemies)
             game_map = Fix_Map_Error(game_map)
+        game_map = Fix_Map_Error(game_map)
         if (Game.Player_HP > 0):
             game_map = Rounds(game_map,Tower_Algorithm=Tower_Algorithm,Enemy_Algorithm=Enemy_Algorithm)
         else:
             print("YOU LOSE!")
-            print(game_map)
-            print(Enemy_Options)
             break
 
 # Validate that each spawner has a path to the base
@@ -403,14 +422,14 @@ def Run_Game(game_map, Tower_Algorithm, Enemy_Algorithm):
 # game_map = create_map(rows, columns, difficulty_level)
 
 def Rounds(game_map, Tower_Algorithm, Enemy_Algorithm):
-    global Player_Money, Enemy_Money, Round_time, Enemies
+    global Enemy_Money, Round_time, Enemies
     if Game.num_of_rounds % 4 == 0:
         game_map[rows//2][columns-1] = "base"
         game_map = Enemy_Algorithm(game_map)
         game_map = Tower_Algorithm(game_map)
     if (Game.num_of_rounds % 40 == 0):
         Enemy_Money = Enemy_Money + 20*(Game.num_of_rounds/100)
-        Player_Money = Player_Money + 20*(Game.num_of_rounds/100)
+        Game.Player_Money = Game.Player_Money + 20*(Game.num_of_rounds/100)
     Game.num_of_rounds = Game.num_of_rounds + 1
     return game_map
 
@@ -437,6 +456,7 @@ def Convert_map_to_visual_map(matrix):
 
 
 algorithms = {
+    "Upgrade_Towers_Algorithm": Upgrade_Towers_Algorithm,
     "All_Money_Algorithm": All_Money_Algorithm,
     "Random_Algorithm": Random_Algorithm,
     "Expensive_Algorithm": Expensive_Algorithm,
@@ -459,7 +479,7 @@ if __name__ == "__main__":
                     Game.num_of_rounds = 0
                     Game.List_Of_Towers = []
                     Game.List_Of_Enemies = []
-                    Player_Money = 50
+                    Game.Player_Money = 50
                     Game.enemies_killed = 0
                     Enemy_Money = 10
                     Game.Player_HP = 1
@@ -504,12 +524,13 @@ if __name__ == "__main__":
         Best_Money_Percentage = 0.5
         previous_enemies_killed = 0
         Money_Percentage = 0.5
-        game = 0
+        game = random.randint(0,999)
         for game2 in range(0,1000):
             Game.num_of_rounds = 0
             Game.List_Of_Towers = []
             Game.List_Of_Enemies = []
-            Player_Money = 50
+            Game.Player_Money = 50
+            Game.Player_Money -= 10
             Game.enemies_killed = 0
             Enemy_Money = 10
             Game.Player_HP = 1
