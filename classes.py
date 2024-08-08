@@ -3,7 +3,6 @@ import random
 import time
 
 import Game
-Player_Money = Game.Player_Money
 class Enemy:
     def __init__(self, name, health, speed, money_drop, base_damage, row, column):
         self.name = name
@@ -110,23 +109,23 @@ class Tower:
         self.firerate = firerate
         self.attack_range = attack_range
         self.price = price
-        self.upgrade_cost_1 = price * 0.75
-        self.upgrade_cost_2 = price * 1.5
+        self.upgrade_1 = False
+        self.upgrade_2 = False
         self.row = row
         self.column = column
-
+        self.upgrade_1_cost = self.price*0.5
+        self.upgrade_2_cost = self.price*1.5
     def Place_Tower(self, tower, row, column, map_2d):
         game_map = map_2d
         game_map[row][column] = tower
         return game_map
 
     def Attack_Enemy(self, enemy: Enemy, map_2d):
-        global Player_Money
         game_map = map_2d
         enemy.health = enemy.health - self.damage
         if enemy.health <= 0:
             game_map = enemy.Destroy_Enemy(map_2d)
-            Player_Money = Player_Money + enemy.money_drop
+            Game.Player_Money = Game.Player_Money + enemy.money_drop
         return game_map
 
     def Check_Attack(self, map_2d):
@@ -139,6 +138,16 @@ class Tower:
                         return game_map
 
         return game_map
+
+    def Upgrade_Tower(self):
+        if (not self.upgrade_1):
+            self.upgrade_1 = True
+            self.damage = self.damage*1.5
+            Game.Player_Money -= self.upgrade_1_cost
+        elif (not self.upgrade_2):
+            self.upgrade_2 = True
+            self.damage = (self.damage/1.5)*2
+            Game.Player_Money -= self.upgrade_2_cost
 
 class NormalTower(Tower):
     def __init__(self, row, column):
