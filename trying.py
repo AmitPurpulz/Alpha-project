@@ -18,229 +18,13 @@ cheapest = towers[0]
 check_SpreadAlgorithm = False
 Enemy_Options = []
 Money_Percentage = 0
-def Best_Money_Usage_Algorithm(game_map): #this algorithm is a local search algorithm whose purpose is to find the most optimal value of how much percent of the Player's money the algorithm should use every round
-    global Money_Percentage
-    total_money = G.Player_Money
-    while G.Player_Money > total_money * (1-Money_Percentage) and G.Player_Money > cheapest.price and Check_Empty_Tiles(game_map) > 0:
-        game_map = Random_Algorithm(game_map)
-    return game_map
-def Random_Enemy_Generator_Algorithm(game_map):
-    global Enemy_Money
-    Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
-    Enemy_Options = cl.List_Of_Enemies_Options
-    enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
-    enemy_instance: cl.Enemy
-    for rounds in range(0,1000):
-        enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
-        enemy_name = enemy_instance.name
-        Predetermined_List_Of_Enemies.append(enemy_name)
-    return Predetermined_List_Of_Enemies
 
-def Random_Enemy_Algorithm(game_map):
-    global Enemy_Money, Enemy_Options
-    normal_enemy_instance = NormalEnemy(0, 0)
-    i = 0
-    enemy = 0
-    while (normal_enemy_instance.money_drop < Enemy_Money and Num_Of_Spawners_Available(game_map) > 0):
-        Enemies = copy.deepcopy(cl.List_Of_Enemies_Options)
-        if (i == len(Enemy_Options)):
-            break
-        enemy_name = Enemy_Options[i]
-        for e in Enemies:
-            e : cl.Enemy
-            if (enemy_name == e.name):
-                enemy = e
-                break
-        if (enemy.money_drop > Enemy_Money):
-            i = i +1
-        else:
-            game_map = Create_Enemy(game_map, enemy)
-            Enemy_Money = Enemy_Money - enemy.money_drop
-            Enemy_Options.pop(i)
-    return game_map
-
-def All_Money_Algorithm(game_map):
-    global towers
-    while (G.Player_Money > cl.NormalTower(0,0).price and Check_Empty_Tiles(game_map) > 0):
-        game_map = Random_Algorithm(game_map)
-    return game_map
-
-def Random_Algorithm(game_map):
-    global towers
-    Tower_Options = copy.deepcopy(towers)
-    normal_tower_instance = NormalTower(0, 0)
-    tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
-    if (Check_Empty_Tiles(game_map) == 0):
-        return game_map
-    while (tower.price > G.Player_Money):
-        Tower_Options = copy.deepcopy(towers)
-        tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
-        if G.Player_Money < normal_tower_instance.price:
-            return game_map
-    tower.row, tower.column = Best_Location(game_map, tower)
-    if (tower.row == rows):
-        return game_map
-    G.Player_Money = G.Player_Money - tower.price
-    game_map[tower.row][tower.column] = tower
-    G.List_Of_Towers.append(tower)
-    return game_map
-
-def Check_No_Towers(game_map):
-    global rows, columns
-    for row in range(0,rows):
-        for column in range(0,columns):
-            if isinstance(game_map[row][column], Tower):
-                return False
-    return True
-
-def Blocks_In_Range(temp_map, tower): # this is used to mark blocks in the map as blocks who are in range of the current towers
-    for row in range(max(tower.row - tower.attack_range, 0), min(tower.row + tower.attack_range + 1, rows)):
-        for column in range(max(tower.column - tower.attack_range, 0), min(tower.column + tower.attack_range + 1, columns)):
-            if (temp_map[row][column] in ["road", "spawner"] or isinstance(temp_map[row][column], cl.Enemy)):
-                temp_map[row][column] = "marked"
-    return temp_map
-
-def SpreadPlacement_Algorithm(game_map):
-    global towers, cheapest, check_SpreadAlgorithm
-    check_SpreadAlgorithm = True
-    num_of_tiles = 0
-    temp_map = copy.deepcopy(game_map)
-    if (Check_Empty_Tiles(game_map) == 0):
-        return game_map
-    if (Check_No_Towers(game_map)):
-        game_map = Random_Algorithm(game_map=game_map)
-    else:
-        for tower in G.List_Of_Towers:
-            temp_map = Blocks_In_Range(temp_map, tower)
-        num_of_tiles = 0
-        tower = towers[random.randint(0, len(cl.towers) - 1)]
-        while (tower.price > G.Player_Money):
-            tower = towers[random.randint(0, len(cl.towers) - 1)]
-            if G.Player_Money < cheapest.price:
-                return game_map
-        tower.row, tower.column = Best_Location(temp_map, tower)
-        if (tower.row == rows):
-            return game_map
-        G.Player_Money = G.Player_Money - tower.price
-        game_map[tower.row][tower.column] = tower
-        G.List_Of_Towers.append(tower)
-    print(game_map)
-    return game_map
-
-def Expensive_Algorithm(game_map):
-    global towers, cheapest
-    while (G.Player_Money >= cheapest.price):
-        if (Check_Empty_Tiles(game_map) == 0):
-            return game_map
-        for tower_price in range(len(towers) - 1, -1, -1):
-            if (G.Player_Money >= towers[tower_price].price):
-                tower = towers[tower_price]
-                tower.row, tower.column = Best_Location(game_map, tower)
-                if (tower.row == False):
-                    return game_map
-                G.Player_Money = G.Player_Money - towers[tower_price].price
-                game_map[tower.row][tower.column] = tower
-                G.List_Of_Towers.append(tower)
-                break
-    return game_map
-
-def Upgrade_Towers_Algorithm(game_map):
-    Upgrades_Available = False
-    for tower in G.List_Of_Towers:
-        if (not tower.upgrade_1) and G.Player_Money>tower.upgrade_1_cost:
-            tower.Upgrade_Tower()
-            Upgrades_Available = True
-        elif (not tower.upgrade_2) and G.Player_Money>tower.upgrade_2_cost:
-            tower.Upgrade_Tower()
-            Upgrades_Available = True
-    if (not Upgrades_Available):
-        game_map = Random_Algorithm(game_map)
-    return game_map
-
-
-def Best_Location(game_map, tower: Tower):
-    global check_SpreadAlgorithm
-    best_location_row = 0
-    best_location_column = 0
-    num_of_tiles = 0
-    biggest_num_of_tiles = 0
-    list_of_empty_tiles = []
-    for row in range(0, rows):
-        for column in range(0, columns):
-            if (game_map[row][column] == "empty"):
-                list_of_empty_tiles.append((row,column))
-                num_of_tiles = Surrounding_tiles(game_map, tower, row, column)
-                if num_of_tiles > biggest_num_of_tiles:
-                    biggest_num_of_tiles = num_of_tiles
-                    best_location_row = row
-                    best_location_column = column
-
-    if (best_location_row == 0 and best_location_column == 0 and game_map[best_location_row][best_location_column] != "empty"):
-        row, column = list_of_empty_tiles[random.randint(0,len(list_of_empty_tiles)-1)]
-        return row, column
-    return best_location_row, best_location_column
-
-def Surrounding_tiles_SpreadAlgorithm(game_map, tower: Tower):
-    num_of_tiles = 0
-    for row in range(max(0, tower.row - tower.attack_range), min(rows, tower.row + tower.attack_range + 1)):
-        for column in range(max(0, tower.column - tower.attack_range), min(columns, tower.column + tower.attack_range + 1)):
-            if ((game_map[row][column] in ["road", "spawner"] or isinstance(game_map[row][column], cl.Enemy))):
-                num_of_tiles += 1
-    if (num_of_tiles == 0):
-        pass
-    return num_of_tiles
-
-def Surrounding_tiles(game_map, tower: Tower, tower_row, tower_column):
-    num_of_tiles = 0
-    for row in range(max(0, tower_row - tower.attack_range), min(rows, tower_row + tower.attack_range + 1)):
-        for column in range(max(0, tower_column - tower.attack_range), min(columns, tower_column + tower.attack_range + 1)):
-            if (game_map[row][column] in ["road", "spawner"] or isinstance(game_map[row][column], cl.Enemy)):
-                num_of_tiles += 1
-    return num_of_tiles
-
-def Remake_Enemy_list():
-    global Enemy_Options, game
-    if (len(Enemy_Options) == 0):
-        Enemy_Options = copy.deepcopy(simulations[game][1])
-        print("HAD TO REMAKE THE LIST")
-def Create_Enemy(map_2d, enemy):
-    enemy_location_index = random.randint(0, num_spawners - 1)
-    enemy.row = list_of_spawner_rows[enemy_location_index]
-    enemy.column = list_of_spawner_columns[enemy_location_index]
-    while (map_2d[enemy.row][enemy.column] != "spawner"):
-        enemy_location_index = random.randint(0, num_spawners - 1)
-        enemy.row = list_of_spawner_rows[enemy_location_index]
-        enemy.column = list_of_spawner_columns[enemy_location_index]
-    map_2d[enemy.row][enemy.column] = enemy
-    enemy.OnSpawner = True
-    enemy_health_increase_rate = 0.01
-    a = enemy_health_increase_rate
-    r = max(G.num_of_rounds//40,1)
-    enemy.health = enemy.initial_health * (1+a)**(r-1)
-    G.List_Of_Enemies.append(enemy)
-    return map_2d
-
-def Check_Empty_Tiles(game_map):
-    num_of_empty_tiles = 0
-    for row in game_map:
-        for tile in row:
-            if tile == "empty":
-                num_of_empty_tiles += 1
-    return num_of_empty_tiles
-
-def Num_Of_Spawners_Available(game_map):
-    num_of_spawner_tiles = 0
-    for row in game_map:
-        for tile in row:
-            if tile == "spawner":
-                num_of_spawner_tiles += 1
-    return num_of_spawner_tiles
-
-class MapGenerator:
+class Game_Map:
     def __init__(self):
         self.list_of_spawner_rows = []
         self.list_of_spawner_columns = []
         self.num_spawners = 0
+        self.map_2d = self.create_map(rows,columns,difficulty_level)
 
     def to_dict(self):
         return self.__dict__
@@ -337,6 +121,355 @@ class MapGenerator:
 
         return num_of_adjacent_roads
 
+    def Num_Of_Spawners_Available(self):
+        num_of_spawner_tiles = 0
+        for row in self.map_2d:
+            for tile in row:
+                if tile == "spawner":
+                    num_of_spawner_tiles += 1
+        return num_of_spawner_tiles
+
+    def Surrounding_tiles(self, tower: Tower, tower_row, tower_column):
+        num_of_tiles = 0
+        for row in range(max(0, tower_row - tower.attack_range), min(rows, tower_row + tower.attack_range + 1)):
+            for column in range(max(0, tower_column - tower.attack_range),
+                                min(columns, tower_column + tower.attack_range + 1)):
+                if (self.map_2d[row][column] in ["road", "spawner"] or isinstance(self.map_2d[row][column], cl.Enemy)):
+                    num_of_tiles += 1
+        return num_of_tiles
+
+    def Check_Empty_Tiles(self):
+        num_of_empty_tiles = 0
+        for row in self.map_2d:
+            for tile in row:
+                if tile == "empty":
+                    num_of_empty_tiles += 1
+        return num_of_empty_tiles
+
+    def Check_Adjecent_To_Spawner(self, row, column):
+        for spawner in range(0,num_spawners):
+            for r in range(max(0,list_of_spawner_rows[spawner]-1), min(rows, list_of_spawner_rows[spawner]+1)):
+                for c in range(max(0,list_of_spawner_columns[spawner]-1), min(rows, list_of_spawner_columns[spawner]+1)):
+                    if (r == row and c == column):
+                        return True
+
+    def Check_Adjecent_To_Base(self, row, column):
+            for r in range(rows//2 -1, rows // 2 + 2):
+                for c in range(columns-2, columns):
+                    if (r == row and c == column):
+                        return True
+class Tower_Algorithm:
+
+    def __init__(self, Location_Strategy : str, Money_Strategy : float, Tower_Strategy, Upgrade_Strategy : int, Name):
+        self.Location_Strategy = Location_Strategy #Options: Spread, Base, Spawner, Tiles
+        self.Money_Strategy = Money_Strategy #Options: 0.0-1.0
+        self.Tower_Strategy = Tower_Strategy
+        self.Upgrade_Strategy = Upgrade_Strategy #Options: 0,1,2
+        self.Name = Name
+
+
+    def Location(self, game_map : Game_Map, tower : cl.Tower):
+        temp_map = copy.deepcopy(game_map.map_2d)
+        if (self.Location_Strategy == "Spread"):
+            for tower in G.List_Of_Towers:
+                temp_map = self.Blocks_In_Range(temp_map,tower)
+        best_location_row = 0
+        best_location_column = 0
+        num_of_tiles = 0
+        biggest_num_of_tiles = 0
+        list_of_empty_tiles = []
+        for row in range(0, rows):
+            for column in range(0, columns):
+                if (temp_map[row][column] == "empty"):
+                    if (self.Location_Strategy == "Base"):
+                        if (game_map.Check_Adjecent_To_Base(row, column)):
+                            return row, column
+                    elif (self.Location_Strategy == "Spawmer"):
+                        if (game_map.Check_Adjecent_To_Spawner(row, column)):
+                            return row, column
+                    list_of_empty_tiles.append((row, column))
+                    num_of_tiles = game_map.Surrounding_tiles(tower, row, column)
+                    if num_of_tiles > biggest_num_of_tiles:
+                        biggest_num_of_tiles = num_of_tiles
+                        best_location_row = row
+                        best_location_column = column
+
+        if (best_location_row == 0 and best_location_column == 0 and game_map.map_2d[best_location_row][best_location_column] != "empty"):
+            if (len(list_of_empty_tiles) == 0):
+                print("fasfsdfsdd")
+            row, column = list_of_empty_tiles[random.randint(0, len(list_of_empty_tiles) - 1)]
+            return row, column
+        return best_location_row, best_location_column
+
+    def Place_Tower(self, game_map : Game_Map):
+        global towers
+        if G.Player_Money < cl.NormalTower(0,0).price:
+            return game_map.map_2d
+        Tower_Options = copy.deepcopy(towers)
+        tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
+        while (G.Player_Money < tower.price):
+            tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
+        row, column = self.Location(game_map, tower)
+        tower.row = row
+        tower.column = column
+        game_map.map_2d[tower.row][tower.column] = tower
+        G.List_Of_Towers.append(tower)
+        G.Player_Money -= tower.price
+        return game_map.map_2d
+    def Do_Turn(self, game_map : Game_Map):
+        total_money = G.Player_Money
+        while G.Player_Money > total_money * (1-self.Money_Strategy) and G.Player_Money >= cl.NormalTower(0,0).price and game_map.Check_Empty_Tiles() > 0:
+            Upgrades_Available = False
+            if (self.Upgrade_Strategy == 0 and G.Player_Money >= cl.NormalTower(0,0).price):
+                game_map.map_2d = self.Place_Tower(game_map)
+            elif (self.Upgrade_Strategy == 1):
+                for tower in G.List_Of_Towers:
+                    if (not tower.upgrade_1) and G.Player_Money >= tower.upgrade_1_cost:
+                        tower.Upgrade_Tower()
+                        Upgrades_Available = True
+                        break
+                for tower in G.List_Of_Towers:
+                    if (not tower.upgrade_2) and G.Player_Money >= tower.upgrade_2_cost:
+                        tower.Upgrade_Tower()
+                        Upgrades_Available = True
+                        break
+            elif (self.Upgrade_Strategy == 2):
+                for tower in G.List_Of_Towers:
+                    if (not tower.upgrade_2) and G.Player_Money >= tower.upgrade_2_cost:
+                        tower.Upgrade_Tower()
+                        Upgrades_Available = True
+                        break
+                for tower in G.List_Of_Towers:
+                    if (not tower.upgrade_1) and G.Player_Money >= tower.upgrade_1_cost:
+                        tower.Upgrade_Tower()
+                        Upgrades_Available = True
+                        break
+            if (not Upgrades_Available and G.Player_Money >= cl.NormalTower(0,0).price):
+                game_map.map_2d = self.Place_Tower(game_map)
+        return game_map
+
+    def Blocks_In_Range(self,temp_map,tower):  # this is used to mark blocks in the map as blocks who are in range of the current towers
+        for row in range(max(tower.row - tower.attack_range, 0), min(tower.row + tower.attack_range + 1, rows)):
+            for column in range(max(tower.column - tower.attack_range, 0),
+                                min(tower.column + tower.attack_range + 1, columns)):
+                if (temp_map[row][column] in ["road", "spawner"] or isinstance(temp_map[row][column], cl.Enemy)):
+                    temp_map[row][column] = "marked"
+        return temp_map
+
+class All_Money_Algorithm(Tower_Algorithm):
+    def __init__(self):
+        super().__init__(Location_Strategy="Tiles", Money_Strategy=1, Tower_Strategy= None, Upgrade_Strategy=0, Name= "All_Money_Algorithm")
+
+class Spread_Algorithm(Tower_Algorithm):
+    def __init__(self):
+        super().__init__(Location_Strategy="Spread", Money_Strategy=0.5, Tower_Strategy= None, Upgrade_Strategy=0, Name= "Spread_Algorithm")
+
+class Upgrade_Algorithm(Tower_Algorithm):
+    def __init__(self):
+        super().__init__(Location_Strategy="Tiles", Money_Strategy=0.5, Tower_Strategy=None, Upgrade_Strategy=2, Name= "Upgrade_Algorithm")
+
+def Random_Enemy_Generator_Algorithm(game_map):
+    global Enemy_Money
+    Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
+    Enemy_Options = cl.List_Of_Enemies_Options
+    enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
+    enemy_instance: cl.Enemy
+    for rounds in range(0,1000):
+        enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
+        enemy_name = enemy_instance.name
+        Predetermined_List_Of_Enemies.append(enemy_name)
+    return Predetermined_List_Of_Enemies
+
+def Random_Enemy_Algorithm(Game_map):
+    global Enemy_Money, Enemy_Options
+    normal_enemy_instance = NormalEnemy(0, 0)
+    i = 0
+    enemy = 0
+    game_map = Game_map.map_2d
+    while (normal_enemy_instance.money_drop < Enemy_Money and Game_map.Num_Of_Spawners_Available() > 0):
+        Enemies = copy.deepcopy(cl.List_Of_Enemies_Options)
+        if (i == len(Enemy_Options)):
+            break
+        enemy_name = Enemy_Options[i]
+        for e in Enemies:
+            e : cl.Enemy
+            if (enemy_name == e.name):
+                enemy = e
+                break
+        if (enemy.money_drop > Enemy_Money):
+            i = i +1
+        else:
+            game_map = Create_Enemy(game_map, enemy)
+            Enemy_Money = Enemy_Money - enemy.money_drop
+            Enemy_Options.pop(i)
+    return game_map
+'''
+def All_Money_Algorithm(game_map):
+    global towers
+    while (G.Player_Money > cl.NormalTower(0,0).price and Check_Empty_Tiles(game_map) > 0):
+        game_map = Random_Algorithm(game_map)
+    return game_map
+
+def Best_Money_Usage_Algorithm(game_map): #this algorithm is a local search algorithm whose purpose is to find the most optimal value of how much percent of the Player's money the algorithm should use every round
+    global Money_Percentage
+    total_money = G.Player_Money
+    while G.Player_Money > total_money * (1-Money_Percentage) and G.Player_Money > cheapest.price and Check_Empty_Tiles(game_map) > 0:
+        game_map = Random_Algorithm(game_map)
+    return game_map
+    
+def Random_Algorithm(game_map):
+    global towers
+    Tower_Options = copy.deepcopy(towers)
+    normal_tower_instance = NormalTower(0, 0)
+    tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
+    if (Check_Empty_Tiles(game_map) == 0):
+        return game_map
+    while (tower.price > G.Player_Money):
+        Tower_Options = copy.deepcopy(towers)
+        tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
+        if G.Player_Money < normal_tower_instance.price:
+            return game_map
+    tower.row, tower.column = Best_Location(game_map, tower)
+    if (tower.row == rows):
+        return game_map
+    G.Player_Money = G.Player_Money - tower.price
+    tower.attack_type = random.choice(["first","last","strongest","weakest"])
+    game_map[tower.row][tower.column] = tower
+    G.List_Of_Towers.append(tower)
+    return game_map
+
+def Check_No_Towers(game_map):
+    global rows, columns
+    for row in range(0,rows):
+        for column in range(0,columns):
+            if isinstance(game_map[row][column], Tower):
+                return False
+    return True
+
+def Blocks_In_Range(temp_map, tower): # this is used to mark blocks in the map as blocks who are in range of the current towers
+    for row in range(max(tower.row - tower.attack_range, 0), min(tower.row + tower.attack_range + 1, rows)):
+        for column in range(max(tower.column - tower.attack_range, 0), min(tower.column + tower.attack_range + 1, columns)):
+            if (temp_map[row][column] in ["road", "spawner"] or isinstance(temp_map[row][column], cl.Enemy)):
+                temp_map[row][column] = "marked"
+    return temp_map
+
+def SpreadPlacement_Algorithm(game_map, asmdas : Game_Map):
+    global towers, cheapest, check_SpreadAlgorithm
+    check_SpreadAlgorithm = True
+    num_of_tiles = 0
+    temp_map = copy.deepcopy(game_map.map_2d)
+    if (Check_Empty_Tiles(game_map) == 0):
+        return game_map
+    if (Check_No_Towers(game_map)):
+        game_map = Random_Algorithm(game_map=game_map)
+    else:
+        for tower in G.List_Of_Towers:
+            temp_map = Blocks_In_Range(temp_map, tower)
+        num_of_tiles = 0
+        tower = towers[random.randint(0, len(cl.towers) - 1)]
+        while (tower.price > G.Player_Money):
+            tower = towers[random.randint(0, len(cl.towers) - 1)]
+            if G.Player_Money < cheapest.price:
+                return game_map
+        tower.row, tower.column = Best_Location(temp_map, tower)
+        if (tower.row == rows):
+            return game_map
+        G.Player_Money = G.Player_Money - tower.price
+        game_map[tower.row][tower.column] = tower
+        G.List_Of_Towers.append(tower)
+    print(game_map)
+    return game_map
+
+
+
+def Expensive_Algorithm(game_map):
+    global towers, cheapest
+    while (G.Player_Money >= cheapest.price):
+        if (Check_Empty_Tiles(game_map) == 0):
+            return game_map
+        for tower_price in range(len(towers) - 1, -1, -1):
+            if (G.Player_Money >= towers[tower_price].price):
+                tower = towers[tower_price]
+                tower.row, tower.column = Best_Location(game_map, tower)
+                if (tower.row == False):
+                    return game_map
+                G.Player_Money = G.Player_Money - towers[tower_price].price
+                game_map[tower.row][tower.column] = tower
+                G.List_Of_Towers.append(tower)
+                break
+    return game_map
+
+def Upgrade_Towers_Algorithm(game_map):
+    Upgrades_Available = False
+    for tower in G.List_Of_Towers:
+        if (not tower.upgrade_1) and G.Player_Money>tower.upgrade_1_cost:
+            tower.Upgrade_Tower()
+            Upgrades_Available = True
+            elif (not tower.upgrade_2) and G.Player_Money > tower.upgrade_2_cost:
+            tower.Upgrade_Tower()
+            Upgrades_Available = True
+    if (not Upgrades_Available):
+        game_map = Random_Algorithm(game_map)
+    return game_map
+
+
+def Best_Location(game_map, tower: Tower):
+    global check_SpreadAlgorithm
+    best_location_row = 0
+    best_location_column = 0
+    num_of_tiles = 0
+    biggest_num_of_tiles = 0
+    list_of_empty_tiles = []
+    for row in range(0, rows):
+        for column in range(0, columns):
+            if (game_map[row][column] == "empty"):
+                list_of_empty_tiles.append((row,column))
+                num_of_tiles = Surrounding_tiles(game_map, tower, row, column)
+                if num_of_tiles > biggest_num_of_tiles:
+                    biggest_num_of_tiles = num_of_tiles
+                    best_location_row = row
+                    best_location_column = column
+
+    if (best_location_row == 0 and best_location_column == 0 and game_map[best_location_row][best_location_column] != "empty"):
+        row, column = list_of_empty_tiles[random.randint(0,len(list_of_empty_tiles)-1)]
+        return row, column
+    return best_location_row, best_location_column
+
+def Surrounding_tiles_SpreadAlgorithm(game_map, tower: Tower):
+    num_of_tiles = 0
+    for row in range(max(0, tower.row - tower.attack_range), min(rows, tower.row + tower.attack_range + 1)):
+        for column in range(max(0, tower.column - tower.attack_range), min(columns, tower.column + tower.attack_range + 1)):
+            if ((game_map[row][column] in ["road", "spawner"] or isinstance(game_map[row][column], cl.Enemy))):
+                num_of_tiles += 1
+    if (num_of_tiles == 0):
+        pass
+    return num_of_tiles
+'''
+
+def Remake_Enemy_list():
+    global Enemy_Options, game
+    if (len(Enemy_Options) == 0):
+        Enemy_Options = copy.deepcopy(simulations[game][1])
+        print("HAD TO REMAKE THE LIST")
+def Create_Enemy(map_2d, enemy):
+    enemy_location_index = random.randint(0, num_spawners - 1)
+    enemy.row = list_of_spawner_rows[enemy_location_index]
+    enemy.column = list_of_spawner_columns[enemy_location_index]
+    while (map_2d[enemy.row][enemy.column] != "spawner"):
+        enemy_location_index = random.randint(0, num_spawners - 1)
+        enemy.row = list_of_spawner_rows[enemy_location_index]
+        enemy.column = list_of_spawner_columns[enemy_location_index]
+    map_2d[enemy.row][enemy.column] = enemy
+    enemy.OnSpawner = True
+    enemy_health_increase_rate = 0.01
+    a = enemy_health_increase_rate
+    r = max(G.num_of_rounds//40,1)
+    enemy.health = enemy.initial_health * (1+a)**(r-1)
+    G.List_Of_Enemies.append(enemy)
+    return map_2d
+
+
+
 
 
 # Define the dimensions of the map
@@ -382,17 +515,6 @@ difficulty_level = "hard" #input("write the difficulty you want").lower()
 # If validation fails, recreate the map until paths are valid
 # game_map = create_map(rows, columns, difficulty_level)
 
-def Rounds(game_map, Tower_Algorithm, Enemy_Algorithm):
-    global Enemy_Money, Round_time, Enemies
-    if G.num_of_rounds % 4 == 0:
-        game_map[rows//2][columns-1] = "base"
-        game_map = Enemy_Algorithm(game_map)
-        game_map = Tower_Algorithm(game_map)
-    if (G.num_of_rounds % 40 == 0):
-        Enemy_Money = Enemy_Money + 20*(G.num_of_rounds/100)
-        G.Player_Money = G.Player_Money + 20*(G.num_of_rounds/100)
-    G.num_of_rounds = G.num_of_rounds + 1
-    return game_map
 
 def Convert_map_to_visual_map(matrix):
     game_map2 = [["empty" for _ in range(columns)] for _ in range(rows)]
@@ -417,7 +539,7 @@ def Convert_map_to_visual_map(matrix):
 
 class Game:
 
-    def __init__(self, Game_map : list[list], Tower_Algorithm, Enemy_Algorithm):
+    def __init__(self, Game_map : Game_Map, Tower_Algorithm : Tower_Algorithm, Enemy_Algorithm):
         self.Game_map = Game_map
         self.Tower_Algorithm = Tower_Algorithm
         self.Enemy_Algorithm = Enemy_Algorithm
@@ -428,17 +550,17 @@ class Game:
             temp_num_of_enemies = len(G.List_Of_Enemies)
             Remake_Enemy_list()
             for Tower in range(0, len(G.List_Of_Towers)):
-                self.Game_map = G.List_Of_Towers[Tower].Check_Attack(self.Game_map)
+                self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
                 self.Fix_Map_Error()
             num_of_enemies = len(G.List_Of_Enemies)
             for enemy in range(0, len(G.List_Of_Enemies)):
                 if enemy < len(G.List_Of_Enemies):
-                    self.Game_map = G.List_Of_Enemies[enemy].Move(self.Game_map)
+                    self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
                 if (G.Player_HP <= 0):
                     break
                 if (len(G.List_Of_Enemies) < num_of_enemies and len(G.List_Of_Enemies) > 0 and enemy < len(
                         G.List_Of_Enemies)):
-                    self.Game_map = G.List_Of_Enemies[enemy].Move(self.Game_map)
+                    self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
                     num_of_enemies = len(G.List_Of_Enemies)
                 self.Fix_Map_Error()
             self.Fix_Map_Error()
@@ -451,43 +573,40 @@ class Game:
     def Rounds(self):
         global Enemy_Money, Round_time, Enemies
         if G.num_of_rounds % 4 == 0:
-            self.Game_map[rows // 2][columns - 1] = "base"
-            self.Game_map = self.Enemy_Algorithm(self.Game_map)
-            self.Game_map = self.Tower_Algorithm(self.Game_map)
+            self.Game_map.map_2d[rows // 2][columns - 1] = "base"
+            self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
+            self.Game_map= self.Tower_Algorithm.Do_Turn(self.Game_map)
         if (G.num_of_rounds % 40 == 0):
             Enemy_Money = Enemy_Money + 20 * (G.num_of_rounds / 100)
             G.Player_Money = G.Player_Money + 20 * (G.num_of_rounds / 100)
         G.num_of_rounds = G.num_of_rounds + 1
 
     def Fix_Map_Error(self):
-        for row in self.Game_map:
+        for row in self.Game_map.map_2d:
             for tile in row:
                 if isinstance(tile, cl.Enemy):
                     if tile in G.List_Of_Enemies:
                         pass
                     else:
-                        self.Game_map[tile.row][tile.column] = "road"
+                        self.Game_map.map_2d[tile.row][tile.column] = "road"
         for i in range(0, num_spawners):
-            if isinstance(self.Game_map[list_of_spawner_rows[i]][list_of_spawner_columns[i]], Enemy) or \
-                    self.Game_map[list_of_spawner_rows[i]][list_of_spawner_columns[i]] == "spawner":
+            if isinstance(self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]], Enemy) or \
+                    self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]] == "spawner":
                 pass
             else:
-                self.Game_map[list_of_spawner_rows[i]][list_of_spawner_columns[i]] = "spawner"
+                self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]] = "spawner"
 
-
-algorithms = {
-    "Upgrade_Towers_Algorithm": Upgrade_Towers_Algorithm,
-    "All_Money_Algorithm": All_Money_Algorithm,
-    "Random_Algorithm": Random_Algorithm,
-    "Expensive_Algorithm": Expensive_Algorithm,
-    "SpreadPlacement_Algorithm": SpreadPlacement_Algorithm,
-}
+Upgrade_Algorithm_instance = Upgrade_Algorithm()
+All_Money_Algorithm_instance = All_Money_Algorithm()
+Spread_Algorithm_instance = Spread_Algorithm()
+algorithms = [All_Money_Algorithm_instance, Spread_Algorithm_instance, Upgrade_Algorithm_instance]
 if __name__ == "__main__":
     with open('simulations.json', 'r') as f:
         simulations = json.load(f)
     Which_Test = input().lower()
     if (Which_Test == "algorithms"):
-        for algorithm_name, algorithm in algorithms.items():
+        for algorithm in algorithms:
+            Game_map = Game_Map()
             Actual_Game = Game([[]], algorithm, Random_Enemy_Algorithm)
             game_number = 0 #an index used to choose which simulation from the list of simulations
             for game in range(0, 100):
@@ -514,7 +633,11 @@ if __name__ == "__main__":
                     list_of_spawner_columns = map_gen_atributes[1]
                     num_spawners = map_gen_atributes[2]
                     game_map = map_gen_atributes[3]
-                    Actual_Game.Game_map = game_map
+                    Game_map.map_2d = game_map
+                    Game_map.list_of_spawner_rows = list_of_spawner_rows
+                    Game_map.list_of_spawner_columns = list_of_spawner_columns
+                    Game_map.num_spawners = num_spawners
+                    Actual_Game.Game_map = Game_map
                     Enemy_Options = simulations[game_number][1]
                     start_time = time.time()
 
@@ -538,7 +661,7 @@ if __name__ == "__main__":
                     "duration_seconds": average_time_survived
                 }
                 print(game_stats)
-                filename = f"game_results_{algorithm_name}.json"
+                filename = f"game_results_{algorithm.Name}.json"
                 with open(filename, "a") as f:
                     json.dump(game_stats, f)
                     f.write("\n")
