@@ -129,27 +129,26 @@ class Tower:
             G.Player_Money = G.Player_Money + enemy.money_drop
         return game_map
 
-    def Check_Attack(self, map_2d):
-        game_map = map_2d
+    def Check_Attack(self, game_map):
         if G.num_of_rounds % (self.firerate*4) == 0:
             if (self.attack_type == "first"):
                 for column in range(min(self.column + self.attack_range, G.Columns - 1),max(self.column - self.attack_range, 0), -1):
                     for row in range(min(self.row + self.attack_range, G.Rows - 1), max(self.row - self.attack_range, 0),-1):
-                        if isinstance(map_2d[row][column], Enemy) and map_2d[row][column] in G.List_Of_Enemies:
-                            game_map = self.Attack_Enemy(map_2d[row][column], map_2d)
+                        if isinstance(game_map[row][column], Enemy) and game_map[row][column] in G.List_Of_Enemies:
+                            game_map = self.Attack_Enemy(game_map[row][column], game_map)
                             return game_map
             elif (self.attack_type == "last"):
                 for column in range(max(self.column - self.attack_range, 0),min(self.column + self.attack_range, G.Columns - 1)):
                     for row in range(max(self.row - self.attack_range, 0),min(self.row + self.attack_range, G.Rows - 1)):
-                        if isinstance(map_2d[row][column], Enemy) and map_2d[row][column] in G.List_Of_Enemies:
-                            game_map = self.Attack_Enemy(map_2d[row][column], map_2d)
+                        if isinstance(game_map[row][column], Enemy) and game_map[row][column] in G.List_Of_Enemies:
+                            game_map = self.Attack_Enemy(game_map[row][column], game_map)
                             return game_map
             else:
                 Enemies_In_Range = []
                 for column in range(min(self.column + self.attack_range, G.Columns - 1),max(self.column - self.attack_range, 0), -1):
                     for row in range(min(self.row + self.attack_range, G.Rows - 1), max(self.row - self.attack_range, 0),-1):
-                        if isinstance(map_2d[row][column], Enemy) and map_2d[row][column] in G.List_Of_Enemies:
-                            Enemies_In_Range.append(map_2d[row][column])
+                        if isinstance(game_map[row][column], Enemy) and game_map[row][column] in G.List_Of_Enemies:
+                            Enemies_In_Range.append(game_map[row][column])
                 if (len(Enemies_In_Range) > 0):
                     strongest_enemy = 0
                     strongest_enemy_health = 0
