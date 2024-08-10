@@ -206,6 +206,8 @@ class Tower_Algorithm:
 
     def Place_Tower(self, game_map : Game_Map, Min_Money : float):
         global towers
+        if (game_map.Check_Empty_Tiles() == 0):
+            return game_map.map_2d
         if G.Player_Money < cl.NormalTower(0,0).price:
             return game_map.map_2d
         if (len(self.Tower_Strategy) > 0 ):
@@ -571,7 +573,6 @@ class Game:
             Remake_Enemy_list()
             for Tower in range(0, len(G.List_Of_Towers)):
                 self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
-                self.Fix_Map_Error()
             num_of_enemies = len(G.List_Of_Enemies)
             for enemy in range(0, len(G.List_Of_Enemies)):
                 if enemy < len(G.List_Of_Enemies):
@@ -582,8 +583,6 @@ class Game:
                         G.List_Of_Enemies)):
                     self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
                     num_of_enemies = len(G.List_Of_Enemies)
-                self.Fix_Map_Error()
-            self.Fix_Map_Error()
             if (G.Player_HP > 0):
                 self.Rounds()
             else:
@@ -591,7 +590,6 @@ class Game:
 
     def Rounds(self):
         if G.num_of_rounds % 4 == 0:
-            self.Game_map.map_2d[rows // 2][columns - 1] = "base"
             self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
         if (G.num_of_rounds % 40 == 0):
             self.Game_map= self.Tower_Algorithm.Do_Turn(self.Game_map)
@@ -613,6 +611,14 @@ class Game:
                 pass
             else:
                 self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]] = "spawner"
+
+    def Check_Towers(self):
+        num = 0
+        for row in self.Game_map.map_2d:
+            for tile in row:
+                if isinstance(tile, cl.Tower):
+                    num+=1
+        return num
 
 def Reset_Game_Settings():
     G.num_of_rounds = 0
@@ -640,7 +646,7 @@ def modify_random_attribute(self):
 
     elif chosen_attribute == 'Money_Strategy':
         new_money_strategy = self.Money_Strategy
-        while new_money_strategy == self.Money_Strategy:
+        while new_money_strategy == self.Money_Strategy or new_money_strategy > 1 or new_money_strategy < 0:
             new_money_strategy = round(random.uniform(0, 1), 2)  # Ensure it's different
         self.Money_Strategy = new_money_strategy
 
@@ -743,16 +749,17 @@ if __name__ == "__main__":
             total_enemies_killed = 0
             total_rounds_survived = 0
             total_time_survived = 0
-            for game in range(0,1000):
+            for game in range(0,100):
+                print("game_number:", game)
                 # Reset Variables
                 Reset_Game_Settings()
-                map_gen = simulations[game][0]
+                map_gen = copy.deepcopy(simulations[game][0])
                 map_gen: dict
                 map_gen_atributes = list(map_gen.values())
                 list_of_spawner_rows = map_gen_atributes[0]
                 list_of_spawner_columns = map_gen_atributes[1]
                 num_spawners = map_gen_atributes[2]
-                game_map = map_gen_atributes[3]
+                game_map = copy.deepcopy(map_gen_atributes[3])
                 Game_map.map_2d = game_map
                 Game_map.list_of_spawner_rows = list_of_spawner_rows
                 Game_map.list_of_spawner_columns = list_of_spawner_columns
@@ -768,9 +775,9 @@ if __name__ == "__main__":
                 total_enemies_killed += G.enemies_killed
                 total_rounds_survived += G.num_of_rounds
 
-            average_enemies_killed = total_enemies_killed / 1000
-            average_time_survived = total_time_survived / 1000
-            average_rounds_survived = total_rounds_survived / 1000
+            average_enemies_killed = total_enemies_killed / 1
+            average_time_survived = total_time_survived / 1
+            average_rounds_survived = total_rounds_survived / 1
             game_stats = {
                 "difficulty": difficulty_level,
                 "rounds": average_rounds_survived,
