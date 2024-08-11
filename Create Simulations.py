@@ -4,20 +4,22 @@ import pickle
 import time
 
 import classes
-from trying import MapGenerator, Random_Enemy_Generator_Algorithm
-import Game
+from trying import Game_Map, Random_Enemy_Generator_Algorithm
+import Game_Settings as G
 
-rows = Game.Rows
-columns = Game.Columns
+rows = G.Rows
+columns = G.Columns
 
-def generate_simulations(num_simulations=100):
+def generate_simulations(num_simulations=1000):
     simulations = []
-    map_gen = MapGenerator()
+    map_gen = Game_Map()
     for _ in range(num_simulations):
+        if (_ % 100 == 0 and _ != 0):
+            G.difficulty_level += 1
         random.seed(time.time() + random.randint(0, 1000))
-        map_gen = MapGenerator()
+        map_gen = Game_Map()
         simulation = []
-        game_map = map_gen.create_map(rows, columns, difficulty="hard")
+        game_map = map_gen.map_2d
         simulation.append(map_gen.to_dict())
         list_of_enemies = Random_Enemy_Generator_Algorithm(game_map)
         simulation.append(list_of_enemies)
