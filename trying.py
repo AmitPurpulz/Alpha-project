@@ -21,7 +21,8 @@ class Game_Map:
         self.list_of_spawner_rows = []
         self.list_of_spawner_columns = []
         self.num_spawners = 0
-        self.map_2d = self.create_map(rows,columns,G.difficulty_level)
+        self.map_2d = self.create_map(rows=rows,columns=columns,difficulty=G.difficulty_level)
+        self.Spawner_Order = self.Create_Spawner_Order()
 
     def to_dict(self):
         return self.__dict__
@@ -34,9 +35,9 @@ class Game_Map:
         if self.num_spawners == 1:
             self.map_2d[rows // 2][0] = "spawner"
         elif difficulty < 5:
-            self.column_distance = int(columns // 2 - 2)
+            column_distance = int(columns // 2 - 2)
         else:
-            self.column_distance = int(columns // 2 - 1)
+            column_distance = int(columns // 2 - 1)
 
         self.list_of_spawner_rows = []
         self.list_of_spawner_columns = []
@@ -45,7 +46,7 @@ class Game_Map:
             while True:
                 if self.num_spawners != 1:
                     row = random.randint(0, rows - 1)
-                    col = random.randint(0, self.column_distance)
+                    col = random.randint(0, column_distance)
                     if self.map_2d[row][col] == "empty" and all(self.map_2d[row][i] != "spawner" for i in range(columns)):
                         self.map_2d[row][col] = "spawner"
                         break
@@ -150,6 +151,13 @@ class Game_Map:
                 for c in range(columns-2, columns):
                     if (r == row and c == column):
                         return True
+
+    def Create_Spawner_Order(self):
+        global Enemy_Options
+        List_Of_Spawn_Order = []
+        for enemy in range(0,1000):
+            List_Of_Spawn_Order.append(random.randint(0,self.num_spawners-1))
+        return List_Of_Spawn_Order
 class Tower_Algorithm:
 
     def __init__(self, Location_Strategy : str, Money_Strategy : float, Tower_Strategy : [cl.Tower], Upgrade_Strategy : int, Tower_Attack_Strategy : [str], Name):
@@ -311,32 +319,36 @@ def Random_Enemy_Algorithm(Game_map):
         if (enemy.price > G.Enemy_Money):
             i = i +1
         else:
-            game_map = Create_Enemy(game_map, enemy)
+            game_map = Create_Enemy(Game_map, enemy)
             G.Enemy_Money = G.Enemy_Money - enemy.price
             Enemy_Options.pop(i)
     return game_map
 
-def Remake_Enemy_list():
+def Remake_Enemy_list(Game_map : Game_Map):
     global Enemy_Options, game
     if (len(Enemy_Options) == 0):
         Enemy_Options = copy.deepcopy(simulations[game][1])
         print("HAD TO REMAKE THE LIST")
-def Create_Enemy(map_2d, enemy):
-    enemy_location_index = random.randint(0, num_spawners - 1)
+    if (len(Game_map.Spawner_Order) == 0):
+        Game_map.Spawner_Order = Game_map.Create_Spawner_Order()
+
+def Create_Enemy(Game_map : Game_Map, enemy):
+    enemy_location_index = Game_map.Spawner_Order[0]
+    Game_map.Spawner_Order.pop(0)
     enemy.row = list_of_spawner_rows[enemy_location_index]
     enemy.column = list_of_spawner_columns[enemy_location_index]
-    while (map_2d[enemy.row][enemy.column] != "spawner"):
+    while (Game_map.map_2d[enemy.row][enemy.column] != "spawner"):
         enemy_location_index = random.randint(0, num_spawners - 1)
-        enemy.row = list_of_spawner_rows[enemy_location_index]
-        enemy.column = list_of_spawner_columns[enemy_location_index]
-    map_2d[enemy.row][enemy.column] = enemy
+        enemy.row = Game_map.list_of_spawner_rows[enemy_location_index]
+        enemy.column = Game_map.list_of_spawner_columns[enemy_location_index]
+    Game_map.map_2d[enemy.row][enemy.column] = enemy
     enemy.OnSpawner = True
     enemy_health_increase_rate = 0.01
     a = enemy_health_increase_rate
     r = max(G.num_of_rounds//40,1)
     enemy.health = round(enemy.initial_health * (1.2)**(r))
     G.List_Of_Enemies.append(enemy)
-    return map_2d
+    return Game_map.map_2d
 
 
 matrices = []
@@ -386,7 +398,7 @@ class Game:
         while True:  # MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
             num_of_enemies = len(G.List_Of_Enemies)
             temp_num_of_enemies = len(G.List_Of_Enemies)
-            Remake_Enemy_list()
+            Remake_Enemy_list(self.Game_map)
             for Tower in range(0, len(G.List_Of_Towers)):
                 self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
             num_of_enemies = len(G.List_Of_Enemies)
@@ -509,6 +521,8 @@ if __name__ == "__main__":
                 total_rounds_survived = 0
                 total_time_survived = 0
                 for avg in range(0, 10):
+                    if (game_number == 100):
+                        print("asds")
                     print("game number = ",game_number)
                     # Reset Variables
                     Reset_Game_Settings()
@@ -523,6 +537,7 @@ if __name__ == "__main__":
                     Game_map.list_of_spawner_rows = list_of_spawner_rows
                     Game_map.list_of_spawner_columns = list_of_spawner_columns
                     Game_map.num_spawners = num_spawners
+                    Game_map.Spawner_Order = copy.deepcopy(map_gen_atributes[4])
                     Actual_Game.Game_map = Game_map
                     Enemy_Options = simulations[game_number][1]
                     start_time = time.time()
@@ -583,6 +598,7 @@ if __name__ == "__main__":
                 Game_map.list_of_spawner_rows = list_of_spawner_rows
                 Game_map.list_of_spawner_columns = list_of_spawner_columns
                 Game_map.num_spawners = num_spawners
+                Game_map.Spawner_Order = copy.deepcopy(map_gen_atributes[4])
                 Actual_Game.Game_map = Game_map
                 Enemy_Options = copy.deepcopy(simulations[game][1])
                 start_time = time.time()
