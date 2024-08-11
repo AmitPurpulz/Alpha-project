@@ -30,8 +30,7 @@ class Game_Map:
         self.map_2d = [["empty" for _ in range(columns)] for _ in range(rows)]
         self.num_spawners = difficulty
         if self.num_spawners < 1:
-            self.num_spawners == 1
-
+            self.num_spawners = 1
         if self.num_spawners == 1:
             self.map_2d[rows // 2][0] = "spawner"
         elif difficulty < 5:
@@ -271,15 +270,15 @@ class Tower_Algorithm:
 
 class All_Money_Algorithm(Tower_Algorithm):
     def __init__(self):
-        super().__init__(Location_Strategy="Tiles", Money_Strategy=1, Tower_Strategy= [], Upgrade_Strategy=0, Tower_Attack_Strategy=[], Name= "All_Money_Algorithm")
+        super().__init__(Location_Strategy="Tiles", Money_Strategy=1, Tower_Strategy= copy.deepcopy(towers), Upgrade_Strategy=0, Tower_Attack_Strategy=[], Name= "All_Money_Algorithm")
 
 class Spread_Algorithm(Tower_Algorithm):
     def __init__(self):
-        super().__init__(Location_Strategy="Spread", Money_Strategy=0.5, Tower_Strategy= [], Upgrade_Strategy=0, Tower_Attack_Strategy=[], Name= "Spread_Algorithm")
+        super().__init__(Location_Strategy="Spread", Money_Strategy=0.5, Tower_Strategy= copy.deepcopy(towers), Upgrade_Strategy=0, Tower_Attack_Strategy=[], Name= "Spread_Algorithm")
 
 class Upgrade_Algorithm(Tower_Algorithm):
     def __init__(self):
-        super().__init__(Location_Strategy="Tiles", Money_Strategy=0.5, Tower_Strategy=[], Upgrade_Strategy=2, Tower_Attack_Strategy=[], Name= "Upgrade_Algorithm")
+        super().__init__(Location_Strategy="Tiles", Money_Strategy=0.5, Tower_Strategy=copy.deepcopy(towers), Upgrade_Strategy=2, Tower_Attack_Strategy=[], Name= "Upgrade_Algorithm")
 
 
 def Random_Enemy_Generator_Algorithm(game_map):
@@ -335,7 +334,7 @@ def Create_Enemy(map_2d, enemy):
     enemy_health_increase_rate = 0.01
     a = enemy_health_increase_rate
     r = max(G.num_of_rounds//40,1)
-    enemy.health = enemy.initial_health * (1+a)**(r-1)
+    enemy.health = round(enemy.initial_health * (1.2)**(r))
     G.List_Of_Enemies.append(enemy)
     return map_2d
 
@@ -503,7 +502,7 @@ if __name__ == "__main__":
     if (Which_Test == "algorithms"):
         for algorithm in algorithms:
             Game_map = Game_Map()
-            Actual_Game = Game([[]], algorithm, Random_Enemy_Algorithm)
+            Actual_Game = Game(Game_map, algorithm, Random_Enemy_Algorithm)
             game_number = 0 #an index used to choose which simulation from the list of simulations
             for game in range(0, 100):
                 total_enemies_killed = 0
@@ -513,13 +512,13 @@ if __name__ == "__main__":
                     print("game number = ",game_number)
                     # Reset Variables
                     Reset_Game_Settings()
-                    map_gen = simulations[game_number][0]
+                    map_gen = copy.deepcopy(simulations[game_number][0])
                     map_gen : dict
                     map_gen_atributes = list(map_gen.values())
                     list_of_spawner_rows = map_gen_atributes[0]
                     list_of_spawner_columns = map_gen_atributes[1]
                     num_spawners = map_gen_atributes[2]
-                    game_map = map_gen_atributes[3]
+                    game_map = copy.deepcopy(map_gen_atributes[3])
                     Game_map.map_2d = game_map
                     Game_map.list_of_spawner_rows = list_of_spawner_rows
                     Game_map.list_of_spawner_columns = list_of_spawner_columns
@@ -538,9 +537,9 @@ if __name__ == "__main__":
                     total_rounds_survived += G.num_of_rounds
                     game_number = game_number +1
 
-                average_enemies_killed = total_enemies_killed / 100
-                average_time_survived = total_time_survived / 100
-                average_rounds_survived = total_rounds_survived / 100
+                average_enemies_killed = total_enemies_killed / 10
+                average_time_survived = total_time_survived / 10
+                average_rounds_survived = total_rounds_survived / 10
                 game_stats = {
                     "difficulty": G.difficulty_level,
                     "rounds": average_rounds_survived,
@@ -548,8 +547,12 @@ if __name__ == "__main__":
                     "duration_seconds": average_time_survived
                 }
                 print(game_stats)
+                if (game == 0):
+                    writing_style = "w"
+                else:
+                    writing_style = "a"
                 filename = f"game_results_{algorithm.Name}.json"
-                with open(filename, "a") as f:
+                with open(filename, writing_style) as f:
                     json.dump(game_stats, f)
                     f.write("\n")
     else:
@@ -602,7 +605,11 @@ if __name__ == "__main__":
             }
             print(i, ":",game_stats)
             filename = f"game_results_{Local_Search_Algorithm.Name}.json"
-            with open(filename, "a") as f:
+            if (i == 0):
+                writing_style = "w"
+            else:
+                writing_style = "a"
+            with open(filename, writing_style) as f:
                 json.dump(game_stats, f)
                 f.write("\n")
             if (average_enemies_killed > best_average_enemies_killed):
