@@ -4,7 +4,7 @@ import sys
 import time
 import Game_Settings as G
 class Enemy:
-    def __init__(self, name, health, speed, money_drop, base_damage, row, column):
+    def __init__(self, name, health, speed, money_drop, base_damage, row, column,price):
         self.name = name
         self.health = health
         self.initial_health = health  # Added initial_health attribute
@@ -14,7 +14,7 @@ class Enemy:
         self.row = row
         self.column = column
         self.OnSpawner = False
-
+        self.price = price
     def Check_Road(self, map_2d):
         row = int(self.row)
         column = int(self.column)
@@ -116,16 +116,14 @@ class Tower:
         self.column = column
         self.upgrade_1_cost = self.price*0.5
         self.upgrade_2_cost = self.price*1.5
-    def Place_Tower(self, tower, row, column, map_2d):
-        game_map = map_2d
+    def Place_Tower(self, tower, row, column, game_map):
         game_map[row][column] = tower
         return game_map
 
-    def Attack_Enemy(self, enemy: Enemy, map_2d):
-        game_map = map_2d
+    def Attack_Enemy(self, enemy: Enemy, game_map):
         enemy.health = enemy.health - self.damage
         if enemy.health <= 0:
-            game_map = enemy.Destroy_Enemy(map_2d)
+            game_map = enemy.Destroy_Enemy(game_map)
             G.Player_Money = G.Player_Money + enemy.money_drop
         return game_map
 
@@ -179,11 +177,20 @@ class Tower:
 
 class NormalTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=1, firerate=1, attack_range=2, attack_type="first" ,price=10, row=row, column=column)
+        super().__init__(damage=2, firerate=1, attack_range=2, attack_type="first" ,price=10, row=row, column=column)
 
 class ShotgunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=3, firerate=2, attack_range=1, attack_type="first", price=20, row=row, column=column)
+        super().__init__(damage=1, firerate=2, attack_range=1, attack_type="first", price=20, row=row, column=column)
+
+    def Attack_Enemy(self, enemy: Enemy, game_map):
+        # Modified attack to handle shotgun's spread (5 pellets)
+        for _ in range(5):  # 5 pellets per shot
+            enemy.health -= self.damage
+        if enemy.health <= 0:
+            game_map = enemy.Destroy_Enemy(game_map)
+            G.Player_Money += enemy.money_drop
+        return game_map
 
 class MachinegunTower(Tower):
     def __init__(self, row, column):
@@ -191,7 +198,7 @@ class MachinegunTower(Tower):
 
 class SniperTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=5, firerate=4, attack_range=4, attack_type="first", price=40, row=row, column=column)
+        super().__init__(damage=5, firerate=4, attack_range=8, attack_type="first", price=40, row=row, column=column)
 
 class MinigunTower(Tower):
     def __init__(self, row, column):
@@ -207,22 +214,22 @@ towers = {
     'minigun_tower': MinigunTower(0, 0),
 }
 
-
 class NormalEnemy(Enemy):
     def __init__(self, row, column):
-        super().__init__("normal_enemy", 3, 1, 1, 1, row, column)
+        super().__init__("normal_enemy", 5, 1, 1, 1, row, column, price=5)
 
 class FastEnemy(Enemy):
     def __init__(self, row, column):
-        super().__init__("fast_enemy", 2, 0.5, 2, 2, row, column)
+        super().__init__("fast_enemy", 3, 0.5, 2, 2, row, column, price=8)
 
 class StrongEnemy(Enemy):
     def __init__(self, row, column):
-        super().__init__("strong_enemy", 5, 1, 4, 3, row, column)
+        super().__init__("strong_enemy", 10, 1, 4, 3, row, column, price=12)
 
 class BossEnemy(Enemy):
     def __init__(self, row, column):
-        super().__init__("boss_enemy", 10, 2, 10, 5, row, column)
+        super().__init__("boss_enemy", 50, 2, 10, 5, row, column, price=50)
+
 
 List_Of_Enemies_Options = [NormalEnemy(0,0), FastEnemy(0,0), StrongEnemy(0,0), BossEnemy(0,0)]
 List_Of_Towers_Options = [NormalTower, ShotgunTower, MachinegunTower, SniperTower, MinigunTower]
