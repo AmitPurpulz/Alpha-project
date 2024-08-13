@@ -1,4 +1,5 @@
 import copy
+import math
 import random
 import pickle
 import Game_Settings as G
@@ -15,13 +16,12 @@ Enemy_Options = []
 Money_Percentage = 0
 rows = G.Rows
 columns = G.Columns
-
 class Game_Map:
     def __init__(self):
         self.list_of_spawner_rows = []
         self.list_of_spawner_columns = []
         self.num_spawners = 0
-        self.map_2d = self.create_map(rows=rows,columns=columns,difficulty=G.difficulty_level)
+        self.map_2d = self.create_map(rows=G.Rows,columns=G.Columns,difficulty=G.difficulty_level)
         self.Spawner_Order = self.Create_Spawner_Order()
 
     def to_dict(self):
@@ -290,7 +290,7 @@ class Upgrade_Algorithm(Tower_Algorithm):
     def __init__(self):
         super().__init__(Location_Strategy="Tiles", Money_Strategy=0.5, Tower_Strategy=copy.deepcopy(towers), Upgrade_Strategy=2, Tower_Attack_Strategy=[], Name= "Upgrade_Algorithm")
 
-class LocalSearchAlgorithm:
+class Local_Search_Algorithm:
 
     def __init__(self, game_map_template, enemy_algorithm, iterations=100):
         self.game_map_template = game_map_template
@@ -456,8 +456,75 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
 
         #Returning the best algorithm from the final population
         best_performance = self.evaluate_population()[0]
-        return best_performance["algorithm"]
+        best_algorithm = best_performance["algorithm"]
+        best_performance.pop("algorithm")
+        best_stats = best_performance
+        return best_algorithm, best_stats
 
+
+
+class Simulated_Annealing_Algorithm:
+    def __init__(self, game_map_template: Game_Map, enemy_algorithm, initial_algorithm: Tower_Algorithm,
+                 initial_temperature: float, cooling_rate: float, iterations: int):
+        self.game_map_template = game_map_template
+        self.enemy_algorithm = enemy_algorithm
+        self.current_algorithm = initial_algorithm
+        self.best_algorithm = copy.deepcopy(initial_algorithm)
+        self.current_temperature = initial_temperature
+        self.cooling_rate = cooling_rate
+        self.iterations = iterations
+
+    def acceptance_probability(self, current_score, new_score):
+        if new_score > current_score:
+            return 1.0
+        return math.exp((new_score - current_score) / self.current_temperature)
+
+    def evaluate_algorithm(self, algorithm: Tower_Algorithm):
+        global Enemy_Options, game_number
+        Reset_Game_Settings()
+        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        game_map = copy.deepcopy(self.game_map_template)
+        actual_game = Game(game_map, algorithm, self.enemy_algorithm)
+        start_time = time.time()
+        actual_game.Run_Game()
+        end_time = time.time()
+
+        game_duration = end_time - start_time
+        enemies_killed = G.enemies_killed
+        rounds_survived = G.num_of_rounds
+
+        performance_score = {
+            "duration_seconds": game_duration,
+            "enemies_killed": enemies_killed,
+            "rounds_survived": rounds_survived
+        }
+        return performance_score
+
+    def run(self):
+        best_performance = self.evaluate_algorithm(self.best_algorithm)
+
+        for i in range(self.iterations):
+            new_algorithm = copy.deepcopy(self.current_algorithm)
+            modify_random_attribute(new_algorithm)
+
+            current_performance = self.evaluate_algorithm(self.current_algorithm)
+            new_performance = self.evaluate_algorithm(new_algorithm)
+            print("iteration: ", i, ", current performance: ", current_performance, " new performance:", new_performance)
+            current_score = new_performance["enemies_killed"]
+            best_score = best_performance["enemies_killed"]
+            new_score = current_performance["enemies_killed"]
+
+            if self.acceptance_probability(current_score, new_score) > random.random():
+                self.current_algorithm = new_algorithm
+                current_performance = new_performance
+
+                if new_score > best_score:
+                    self.best_algorithm = copy.deepcopy(new_algorithm)
+                    best_performance = new_performance
+
+            self.current_temperature *= self.cooling_rate
+
+        return self.best_algorithm, best_performance
 def Random_Enemy_Generator_Algorithm(game_map):
     Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
     Enemy_Options = cl.List_Of_Enemies_Options
@@ -670,6 +737,14 @@ def modify_random_attribute(algorithm : Tower_Algorithm):
         elif action == 'remove' and len(algorithm.Tower_Attack_Strategy) > 1:
             algorithm.Tower_Attack_Strategy.remove(random.choice(algorithm.Tower_Attack_Strategy))
 
+def serialize_algorithm(algorithm): #there was an error when trying to dump data into a JSON file where the data had objects of classes which cannot be inserted in a JSON file so we use this function to fix it so we put the data in the file
+    algorithm_dict = algorithm.__dict__.copy()
+    for key, value in algorithm_dict.items():
+        if isinstance(value, list):
+            algorithm_dict[key] = [v.__class__.__name__ if not isinstance(v, str) else v for v in value]
+
+
+    return algorithm_dict
 
 Upgrade_Algorithm_instance = Upgrade_Algorithm()
 All_Money_Algorithm_instance = All_Money_Algorithm()
@@ -746,26 +821,54 @@ if __name__ == "__main__":
         Enemy_Options = copy.deepcopy(simulations[game_number][1])
         ga = Genetic_Tower_Algorithm(
             population_size=10,
-            generations=100,
+            generations=10,
             mutation_rate=0.1,
             game_map=game_map_template,
             enemy_algorithm=enemy_algorithm
         )
 
-        best_algorithm = ga.run()
+        best_algorithm, best_stats = ga.run()
         print("Best algorithm found:", best_algorithm.__dict__)
-    else:
-        game_map_template = Game_Map()  # Assuming you have a template or initial map setup
+        print("Best stats:", best_stats)
+        with open("genetic_algorithm_results.json", "w") as f:
+            json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_stats}, f)
+            f.write("\n")
+    elif (Which_Test == "sa"):
+        game_number = 0
+        game_map_template = Game_Map()  # Template map setup
+        enemy_algorithm = Random_Enemy_Algorithm
+
+        simulated_annealing = Simulated_Annealing_Algorithm(
+            game_map_template=game_map_template,
+            enemy_algorithm=enemy_algorithm,
+            initial_algorithm=All_Money_Algorithm_instance, #this doesnt matter which algorithm we use for the start i just used this one because its the basic one
+            initial_temperature=100.0,
+            cooling_rate=0.95,
+            iterations=10 #Need to change this number
+        )
+
+        best_algorithm, best_performance = simulated_annealing.run()
+        print("Best algorithm found:", best_algorithm.__dict__)
+        print("Best performance:", best_performance)
+
+        with open("simulated_annealing_results.json", "w") as f:
+            json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
+            f.write("\n")
+    elif (Which_Test == "lsa"):
+        game_map_template = Game_Map()
         enemy_algorithm = Random_Enemy_Algorithm
         game_number = 0
         Enemy_Options = copy.deepcopy(simulations[game_number][1])
-        local_search = LocalSearchAlgorithm(
+        local_search = Local_Search_Algorithm(
             game_map_template=game_map_template,
             enemy_algorithm=enemy_algorithm,
-            iterations=2000  # Adjust this number as needed
+            iterations=10  #Need to change this number
         )
 
         best_algorithm, best_performance = local_search.run()
         print("Best algorithm found:", best_algorithm.__dict__)
         print("Best performance:", best_performance)
+        with open("local_search_results.json", "w") as f:
+            json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
+            f.write("\n")
     print("THE CODE RUN SUCCESFULLY")
