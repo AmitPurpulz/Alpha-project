@@ -231,6 +231,8 @@ class Tower_Algorithm:
         total_money = G.Player_Money
         Normal_Tower_Instance = cl.NormalTower(0,0)
         cheapest_tower_price = 1000
+        if len(self.Tower_Strategy) == 0:
+            self.Tower_Strategy = copy.deepcopy(towers)
         for tower in self.Tower_Strategy:
             if tower.price < cheapest_tower_price:
                 cheapest_tower_price = tower.price
@@ -288,6 +290,173 @@ class Upgrade_Algorithm(Tower_Algorithm):
     def __init__(self):
         super().__init__(Location_Strategy="Tiles", Money_Strategy=0.5, Tower_Strategy=copy.deepcopy(towers), Upgrade_Strategy=2, Tower_Attack_Strategy=[], Name= "Upgrade_Algorithm")
 
+class LocalSearchAlgorithm:
+
+    def __init__(self, game_map_template, enemy_algorithm, iterations=100):
+        self.game_map_template = game_map_template
+        self.enemy_algorithm = enemy_algorithm
+        self.iterations = iterations
+        self.best_algorithm = None
+        self.best_performance = None
+
+    def evaluate_algorithm(self, algorithm):
+        global Enemy_Options, game_number
+        Reset_Game_Settings()
+        game_map = copy.deepcopy(self.game_map_template)
+        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        actual_game = Game(game_map, algorithm, self.enemy_algorithm)
+        start_time = time.time()
+        actual_game.Run_Game()
+        end_time = time.time()
+        game_duration = end_time - start_time
+
+        #Save the game stats
+        game_stats = {
+            "enemies_killed": G.enemies_killed,
+            "rounds": G.num_of_rounds,
+            "duration_seconds": game_duration
+        }
+        return game_stats
+
+    def modify_algorithm(self, algorithm):
+        modify_random_attribute(algorithm)
+        return algorithm
+
+    def run(self):
+        #Initialize with a predetermined algorithm i made
+        current_algorithm = Tower_Algorithm(
+            Location_Strategy="Tiles",
+            Money_Strategy=1.0,
+            Tower_Strategy=copy.deepcopy(towers),
+            Upgrade_Strategy=0,
+            Tower_Attack_Strategy=["first", "last", "weakest", "strongest"],
+            Name="Local_Search_Algorithm"
+        )
+
+        self.best_algorithm = copy.deepcopy(current_algorithm)
+        self.best_performance = self.evaluate_algorithm(self.best_algorithm)
+
+        for iteration in range(self.iterations):
+            print(f"Iteration {iteration + 1}/{self.iterations}")
+
+            #Changing and modifying the current algorithm to make a new one
+            new_algorithm = self.modify_algorithm(copy.deepcopy(current_algorithm))
+            new_performance = self.evaluate_algorithm(new_algorithm)
+            print("current iteration: ", iteration, "performance:", new_performance)
+            #Comparing the new performance with the best performance so far
+            if new_performance["enemies_killed"] > self.best_performance["enemies_killed"]:
+                self.best_algorithm = copy.deepcopy(new_algorithm)
+                self.best_performance = new_performance
+                current_algorithm = copy.deepcopy(new_algorithm)
+
+            print(f"Best performance so far: {self.best_performance}")
+            print(f"Current algorithm configuration: {self.best_algorithm.__dict__}")
+
+        return self.best_algorithm, self.best_performance
+
+
+class Genetic_Tower_Algorithm(Tower_Algorithm):
+    def __init__(self, population_size, generations, mutation_rate, game_map, enemy_algorithm):
+        self.population_size = population_size
+        self.generations = generations
+        self.mutation_rate = mutation_rate
+        self.game_map = game_map
+        self.enemy_algorithm = enemy_algorithm
+        self.population = self.initialize_population()
+
+    def initialize_population(self):
+        # Initialize a population of random Tower_Algorithms
+        population = []
+        for i in range(self.population_size):
+            algorithm = Tower_Algorithm(
+                Location_Strategy=random.choice(["Spread", "Base", "Spawner", "Tiles"]),
+                Money_Strategy=round(random.uniform(0, 1), 2),
+                Tower_Strategy=random.sample(towers, random.randint(1, len(towers))),
+                Upgrade_Strategy=random.choice([0, 1, 2]),
+                Tower_Attack_Strategy=random.sample(["first", "last", "strongest", "weakest"], random.randint(1, 4)),
+                Name="GA_Algorithm"
+            )
+            population.append(algorithm)
+        return population
+
+    def evaluate_population(self):
+        global Enemy_Options, game_number
+        #Evaluate the performance of each algorithm by running a game and recording its performance
+        performance_data = []
+        for algorithm in self.population:
+            Reset_Game_Settings()
+            game_map = copy.deepcopy(self.game_map)
+            Enemy_Options = copy.deepcopy(simulations[game_number][1])
+            actual_game = Game(game_map, algorithm, self.enemy_algorithm)
+            start_time = time.time()
+            actual_game.Run_Game()
+            end_time = time.time()
+            game_duration = end_time - start_time
+
+            #Evaluating the performance of the algorithm
+            game_stats = {
+                "algorithm": algorithm,
+                "enemies_killed": G.enemies_killed,
+                "rounds": G.num_of_rounds,
+                "duration_seconds": game_duration
+            }
+            print(game_stats)
+            print(len(Enemy_Options))
+            performance_data.append(game_stats)
+
+        #Sorting the algorithms by performance (by enemies_killed, rounds survived, etc.) so that we can choose the best ones out of them
+        performance_data.sort(key=lambda x: x["enemies_killed"], reverse=True)
+        return performance_data
+
+    def select_best_algorithms(self, performance_data, top_n=5):
+        #Select the top_n algorithms based on performance
+        best_algorithms = [data["algorithm"] for data in performance_data[:top_n]]
+        return best_algorithms
+
+    def mutate_algorithm(self, algorithm):
+        modify_random_attribute(algorithm)
+
+    def crossover_algorithms(self, parent1, parent2):
+        #Creating a new algorithm by combining attributes from two parent algorithms
+        child = Tower_Algorithm(
+            Location_Strategy=random.choice([parent1.Location_Strategy, parent2.Location_Strategy]),
+            Money_Strategy=random.choice([parent1.Money_Strategy, parent2.Money_Strategy]),
+            Tower_Strategy=random.choice([parent1.Tower_Strategy, parent2.Tower_Strategy]),
+            Upgrade_Strategy=random.choice([parent1.Upgrade_Strategy, parent2.Upgrade_Strategy]),
+            Tower_Attack_Strategy=random.choice([parent1.Tower_Attack_Strategy, parent2.Tower_Attack_Strategy]),
+            Name="GA_Algorithm"
+        )
+        return child
+
+    def evolve_population(self, performance_data):
+        #Selecting the best algorithms
+        best_algorithms = self.select_best_algorithms(performance_data)
+
+        #Creating a new population by mutating and crossing over the best algorithms
+        new_population = []
+        for _ in range(self.population_size):
+            if random.random() < self.mutation_rate:
+                # Mutation
+                algorithm = random.choice(best_algorithms)
+                self.mutate_algorithm(algorithm)
+            else:
+                #Crossover
+                parent1, parent2 = random.sample(best_algorithms, 2)
+                algorithm = self.crossover_algorithms(parent1, parent2)
+            new_population.append(algorithm)
+
+        self.population = new_population
+
+    def run(self):
+        #Here we run the genetic algorithm over several generations
+        for generation in range(self.generations):
+            print(f"Generation {generation + 1}")
+            performance_data = self.evaluate_population()
+            self.evolve_population(performance_data)
+
+        #Returning the best algorithm from the final population
+        best_performance = self.evaluate_population()[0]
+        return best_performance["algorithm"]
 
 def Random_Enemy_Generator_Algorithm(game_map):
     Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
@@ -324,10 +493,10 @@ def Random_Enemy_Algorithm(Game_map):
             Enemy_Options.pop(i)
     return game_map
 
-def Remake_Enemy_list(Game_map : Game_Map):
-    global Enemy_Options, game
+def Remake_Enemy_list(Game_map : Game_Map, game_number):
+    global Enemy_Options
     if (len(Enemy_Options) == 0):
-        Enemy_Options = copy.deepcopy(simulations[game][1])
+        Enemy_Options = copy.deepcopy(simulations[game_number][1])
         print("HAD TO REMAKE THE LIST")
     if (len(Game_map.Spawner_Order) == 0):
         Game_map.Spawner_Order = Game_map.Create_Spawner_Order()
@@ -335,8 +504,8 @@ def Remake_Enemy_list(Game_map : Game_Map):
 def Create_Enemy(Game_map : Game_Map, enemy):
     enemy_location_index = Game_map.Spawner_Order[0]
     Game_map.Spawner_Order.pop(0)
-    enemy.row = list_of_spawner_rows[enemy_location_index]
-    enemy.column = list_of_spawner_columns[enemy_location_index]
+    enemy.row = Game_map.list_of_spawner_rows[enemy_location_index]
+    enemy.column = Game_map.list_of_spawner_columns[enemy_location_index]
     while (Game_map.map_2d[enemy.row][enemy.column] != "spawner"):
         enemy_location_index = random.randint(0, num_spawners - 1)
         enemy.row = Game_map.list_of_spawner_rows[enemy_location_index]
@@ -398,7 +567,7 @@ class Game:
         while True:  # MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
             num_of_enemies = len(G.List_Of_Enemies)
             temp_num_of_enemies = len(G.List_Of_Enemies)
-            Remake_Enemy_list(self.Game_map)
+            Remake_Enemy_list(self.Game_map, game_number=0)
             for Tower in range(0, len(G.List_Of_Towers)):
                 self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
             num_of_enemies = len(G.List_Of_Enemies)
@@ -539,7 +708,7 @@ if __name__ == "__main__":
                     Game_map.num_spawners = num_spawners
                     Game_map.Spawner_Order = copy.deepcopy(map_gen_atributes[4])
                     Actual_Game.Game_map = Game_map
-                    Enemy_Options = simulations[game_number][1]
+                    Enemy_Options = copy.deepcopy(simulations[game_number][1])
                     start_time = time.time()
 
                     start_time = time.time()
@@ -570,67 +739,33 @@ if __name__ == "__main__":
                 with open(filename, writing_style) as f:
                     json.dump(game_stats, f)
                     f.write("\n")
-    else:
-        Local_Search_Algorithm = Tower_Algorithm("Tiles",1,copy.deepcopy(towers),0,["first","last","weakest","strongest"],"Local_Search_Algorithm")
-        Game_map = Game_Map()
-        Actual_Game = Game([[]], Local_Search_Algorithm, Random_Enemy_Algorithm)
-        Best_attributes = copy.deepcopy(Local_Search_Algorithm.__dict__)
-        best_average_enemies_killed = 0
-        Best_Run = 0
-        for i in range(0,100):
-            modify_random_attribute(Local_Search_Algorithm)
-            print(Local_Search_Algorithm.__dict__)
-            total_enemies_killed = 0
-            total_rounds_survived = 0
-            total_time_survived = 0
-            for game in range(0,1):
-                print("game_number:", game)
-                # Reset Variables
-                Reset_Game_Settings()
-                map_gen = copy.deepcopy(simulations[game][0])
-                map_gen: dict
-                map_gen_atributes = list(map_gen.values())
-                list_of_spawner_rows = map_gen_atributes[0]
-                list_of_spawner_columns = map_gen_atributes[1]
-                num_spawners = map_gen_atributes[2]
-                game_map = copy.deepcopy(map_gen_atributes[3])
-                Game_map.map_2d = game_map
-                Game_map.list_of_spawner_rows = list_of_spawner_rows
-                Game_map.list_of_spawner_columns = list_of_spawner_columns
-                Game_map.num_spawners = num_spawners
-                Game_map.Spawner_Order = copy.deepcopy(map_gen_atributes[4])
-                Actual_Game.Game_map = Game_map
-                Enemy_Options = copy.deepcopy(simulations[game][1])
-                start_time = time.time()
-                Actual_Game.Run_Game()
-                # Save game stats to JSON
-                end_time = time.time()
-                game_duration = end_time - start_time
-                total_time_survived += game_duration
-                total_enemies_killed += G.enemies_killed
-                total_rounds_survived += G.num_of_rounds
+    elif (Which_Test == "ga"):
+        game_map_template = Game_Map()  # Assuming you have a template or initial map setup
+        enemy_algorithm = Random_Enemy_Algorithm
+        game_number = 0
+        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        ga = Genetic_Tower_Algorithm(
+            population_size=10,
+            generations=100,
+            mutation_rate=0.1,
+            game_map=game_map_template,
+            enemy_algorithm=enemy_algorithm
+        )
 
-            average_enemies_killed = total_enemies_killed / 1
-            average_time_survived = total_time_survived / 1
-            average_rounds_survived = total_rounds_survived / 1
-            game_stats = {
-                "difficulty": G.difficulty_level,
-                "rounds": average_rounds_survived,
-                "enemies_killed": average_enemies_killed,
-                "duration_seconds": average_time_survived
-            }
-            print(i, ":",game_stats)
-            filename = f"game_results_{Local_Search_Algorithm.Name}.json"
-            if (i == 0):
-                writing_style = "w"
-            else:
-                writing_style = "a"
-            with open(filename, writing_style) as f:
-                json.dump(game_stats, f)
-                f.write("\n")
-            if (average_enemies_killed > best_average_enemies_killed):
-                best_average_enemies_killed = average_enemies_killed
-                Best_attributes = copy.deepcopy(Local_Search_Algorithm.__dict__)
-                Best_Run = i
-        print("The best atributes are",Best_attributes, "at run number:", Best_Run)
+        best_algorithm = ga.run()
+        print("Best algorithm found:", best_algorithm.__dict__)
+    else:
+        game_map_template = Game_Map()  # Assuming you have a template or initial map setup
+        enemy_algorithm = Random_Enemy_Algorithm
+        game_number = 0
+        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        local_search = LocalSearchAlgorithm(
+            game_map_template=game_map_template,
+            enemy_algorithm=enemy_algorithm,
+            iterations=2000  # Adjust this number as needed
+        )
+
+        best_algorithm, best_performance = local_search.run()
+        print("Best algorithm found:", best_algorithm.__dict__)
+        print("Best performance:", best_performance)
     print("THE CODE RUN SUCCESFULLY")
