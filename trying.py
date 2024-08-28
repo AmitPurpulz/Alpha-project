@@ -6,7 +6,12 @@ import Game_Settings as G
 import classes as cl
 from classes import NormalEnemy, Tower, Enemy
 import json
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 import time
+from collections import deque
 
 
 towers = list(cl.towers.values())
@@ -158,6 +163,7 @@ class Game_Map:
         for enemy in range(0,1000):
             List_Of_Spawn_Order.append(random.randint(0,self.num_spawners-1))
         return List_Of_Spawn_Order
+
 class Tower_Algorithm:
 
     def __init__(self, Location_Strategy : str, Money_Strategy : float, Tower_Strategy : [cl.Tower], Upgrade_Strategy : int, Tower_Attack_Strategy : [str], Name):
@@ -277,6 +283,161 @@ class Tower_Algorithm:
                 if (temp_map[row][column] in ["road", "spawner"] or isinstance(temp_map[row][column], cl.Enemy)):
                     temp_map[row][column] = "marked"
         return temp_map
+class Game:
+
+    def __init__(self, Game_map: Game_Map, Tower_Algorithm: Tower_Algorithm, Enemy_Algorithm, use_rl_agent=False,
+                 rl_agent=None):
+        self.Game_map = Game_map
+        self.Tower_Algorithm = Tower_Algorithm
+        self.Enemy_Algorithm = Enemy_Algorithm
+        self.use_rl_agent = use_rl_agent  #A Flag to determine if RL agent is used
+        self.rl_agent = rl_agent  #The RL agent, if used
+        self.previous_state = None  #To store the previous state
+        self.previous_action = None  #To store the previous action
+        self.previous_enemies_killed = 0  #To track the number of enemies killed
+    def Run_Game(self):
+        while True:
+            self.Fix_Map_Error()
+            num_of_enemies = len(G.List_Of_Enemies)
+            temp_num_of_enemies = len(G.List_Of_Enemies)
+            Remake_Enemy_list(self.Game_map, game_number=0)
+            for Tower in range(0, len(G.List_Of_Towers)):
+                self.Fix_Map_Error()
+                self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
+            num_of_enemies = len(G.List_Of_Enemies)
+            for enemy in range(0, len(G.List_Of_Enemies)):
+                self.Fix_Map_Error()
+                if enemy < len(G.List_Of_Enemies):
+                    self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
+                if (G.Player_HP <= 0):
+                    break
+                if (len(G.List_Of_Enemies) < num_of_enemies and len(G.List_Of_Enemies) > 0 and enemy < len(
+                        G.List_Of_Enemies)):
+                    self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
+                    num_of_enemies = len(G.List_Of_Enemies)
+            if (G.Player_HP > 0):
+                self.Rounds()
+            else:
+                break
+
+    def Rounds(self):
+        #Track enemies killed before this round
+        initial_enemies_killed = G.enemies_killed
+
+        if G.num_of_rounds % 4 == 0:
+            if self.use_rl_agent and self.rl_agent:
+                #Using the RL agent instead of the regular tower_algorithm
+                current_state = self.collect_state()
+                action = self.rl_agent.act(current_state)
+                if (not isinstance(action,str)):
+                    pass
+
+                reward = self.execute_action(action) #doing the agent's action and giving a reward for the action
+                next_state = self.collect_state()
+                reward += self.calculate_reward(G.enemies_killed-initial_enemies_killed) #Calculating the reward based on the game state
+                print("reward:", reward)
+
+                #Saving the experience to the agent's memory
+                self.rl_agent.remember(current_state, action, reward, next_state, False)
+
+                #Updating the previous state and action
+                self.previous_state = current_state
+                self.previous_action = action
+            self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
+        if (G.num_of_rounds % 40 == 0):
+            if not self.use_rl_agent:
+                #Using the regular tower_algorithm
+                self.Game_map = self.Tower_Algorithm.Do_Turn(self.Game_map)
+            G.Enemy_Money = G.Enemy_Money + 20 * float(G.num_of_rounds / 100)
+            G.Player_Money = G.Player_Money + 20 * float(G.num_of_rounds / 100)
+        G.num_of_rounds = G.num_of_rounds + 1
+
+    def Fix_Map_Error(self):
+        for row in self.Game_map.map_2d:
+            for tile in row:
+                if isinstance(tile, cl.Enemy):
+                    if tile in G.List_Of_Enemies:
+                        pass
+                    else:
+                        self.Game_map.map_2d[tile.row][tile.column] = "road"
+        for i in range(0, self.Game_map.num_spawners):
+            if isinstance(self.Game_map.map_2d[self.Game_map.list_of_spawner_rows[i]][self.Game_map.list_of_spawner_columns[i]], Enemy) or \
+                    self.Game_map.map_2d[self.Game_map.list_of_spawner_rows[i]][self.Game_map.list_of_spawner_columns[i]] == "spawner":
+                pass
+            else:
+                self.Game_map.map_2d[self.Game_map.list_of_spawner_rows[i]][self.Game_map.list_of_spawner_columns[i]] = "spawner"
+
+    def Check_Towers(self):
+        num = 0
+        for row in self.Game_map.map_2d:
+            for tile in row:
+                if isinstance(tile, cl.Tower):
+                    num+=1
+        return num
+
+    def execute_action(self, action):
+        reward = 0
+        if action == 'place_tower':
+            tower = random.choice(cl.List_Of_Towers_Options)(0, 0)  # Choose a random tower
+            if G.Player_Money >= tower.price:  # Check if the player can afford the tower
+                row = random.randint(0, G.Rows - 1)
+                column = random.randint(0, G.Columns - 1)
+                if (self.Game_map.map_2d[row][column] != "empty"):
+                    reward -= 5 #if the agent places a tower in an invalid location get a big punishment
+                else:
+                    tower.row, tower.column = row, column
+                    self.Game_map.map_2d[tower.row][tower.column] = tower
+                    G.List_Of_Towers.append(tower)
+                    G.Player_Money -= tower.price
+                    reward += 10 #if the agent places a tower in a valid location get a major reward
+                    reward += self.calculate_reward_based_on_tower_location(tower) #calulates an extra reward based on how good the location of the tower is (how many tiles is in the tower's attack range)
+            else:
+                reward -= 5 #if agent chooses a tower it doesnt have money for get a big punishment
+        elif action == 'upgrade_tower':
+            if len(G.List_Of_Towers) > 0:
+                tower = random.choice(G.List_Of_Towers)  # Choose a random existing tower to upgrade
+                if tower.upgrade_2:
+                    reward -= 5 #if the agent chooses to upgrade a tower that has already been upgraded to the maximum get a big punishment
+                if tower.upgrade_1:
+                    upgrade_cost = tower.upgrade_2_cost
+                else:
+                    upgade_cost = tower.upgrade_1_cost
+                if G.Player_Money >= tower.upgrade_2_cost:  # Check if the player can afford the upgrade
+                    tower.Upgrade_Tower()
+                    reward += 10 #if the agent upgrades a tower get a major reward
+                else:
+                    reward -= 5 #if the agent tries to upgrade a tower but it doesnt have enough money get a big punishment
+            else:
+                reward -= 5 #if the agent chooses to upgrade a tower but there are no towers available to upgrade get a big punishment
+        elif action == 'skip_turn':
+            pass
+        return reward
+
+    def calculate_reward(self, initial_enemies_killed):
+        #Calculate how many enemies were killed during this round
+        enemies_killed_this_round = G.enemies_killed - initial_enemies_killed
+        reward = enemies_killed_this_round  # Reward is based on enemies killed during this round
+
+        if G.Player_HP > 0:
+            reward += G.Player_HP * 5  #Bonus reward for keeping the player alive
+
+        return reward
+
+    def calculate_reward_based_on_tower_location(self, tower : cl.Tower): #this function rewards the agent for each tile that the tower he places can reach and a big punishment for placing the tower in a place with no tiles that are in it's attack_range
+        tiles_in_tower_range = self.Game_map.Surrounding_tiles(tower,tower.row,tower.column)
+        if (tiles_in_tower_range == 0):
+            return -5
+        else:
+            return tiles_in_tower_range
+
+    def collect_state(self):
+        #Collect the current state for the RL agent
+        return [
+            G.Player_Money / 100.0,
+            G.Player_HP,
+            len(G.List_Of_Towers) / 10.0,
+            len(G.List_Of_Enemies) / 10.0
+        ]
 
 class All_Money_Algorithm(Tower_Algorithm):
     def __init__(self):
@@ -303,7 +464,7 @@ class Local_Search_Algorithm:
         global Enemy_Options, game_number
         Reset_Game_Settings()
         game_map = copy.deepcopy(self.game_map_template)
-        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
         actual_game = Game(game_map, algorithm, self.enemy_algorithm)
         start_time = time.time()
         actual_game.Run_Game()
@@ -386,7 +547,7 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
         for algorithm in self.population:
             Reset_Game_Settings()
             game_map = copy.deepcopy(self.game_map)
-            Enemy_Options = copy.deepcopy(simulations[game_number][1])
+            Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
             actual_game = Game(game_map, algorithm, self.enemy_algorithm)
             start_time = time.time()
             actual_game.Run_Game()
@@ -482,7 +643,7 @@ class Simulated_Annealing_Algorithm:
     def evaluate_algorithm(self, algorithm: Tower_Algorithm):
         global Enemy_Options, game_number
         Reset_Game_Settings()
-        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
         game_map = copy.deepcopy(self.game_map_template)
         actual_game = Game(game_map, algorithm, self.enemy_algorithm)
         start_time = time.time()
@@ -525,6 +686,173 @@ class Simulated_Annealing_Algorithm:
             self.current_temperature *= self.cooling_rate
 
         return self.best_algorithm, best_performance
+
+
+class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
+    def __init__(self, state_size, action_size):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.memory = deque(maxlen=2000)  #Limit the memory size to 2000
+        self.gamma = 0.95    #Discount rate
+        self.epsilon = 1.0   #Exploration rate
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
+        self.learning_rate = 0.001
+        self.model = self._build_model()
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.best_performance = {
+            "max_cumulative_reward": float('-inf'),
+            "max_rounds_survived": 0
+        }
+
+    def _build_model(self):
+        #Making a Neural network with two hidden layers
+        model = nn.Sequential(
+            nn.Linear(self.state_size, 24),
+            nn.ReLU(),
+            nn.Linear(24, 24),
+            nn.ReLU(),
+            nn.Linear(24, self.action_size)
+        )
+        return model
+
+    def remember(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
+
+    def act(self, state):
+        if random.random() <= self.epsilon:
+            exploration_actions = ["place_tower", "upgrade_tower", "skip_turn"]
+            return random.choice(exploration_actions)
+        state = torch.FloatTensor(state).unsqueeze(0)
+        act_values = self.model(state)
+        return torch.argmax(act_values[0]).item()
+
+    def replay(self, batch_size):
+        action_map = {
+            "place_tower": 0,
+            "upgrade_tower": 1,
+            "skip_turn": 2
+        }
+
+        if len(self.memory) < batch_size:
+            return
+        minibatch = random.sample(self.memory, batch_size)
+        for state, action_str, reward, next_state, done in minibatch:
+            try:
+                action = action_map[action_str]  #Convert action string to corresponding index
+            except:
+                pass
+            state = torch.FloatTensor(state).unsqueeze(0)  #Add batch dimension
+            next_state = torch.FloatTensor(next_state).unsqueeze(0)
+            target = reward
+            if not done:
+                target = (reward + self.gamma * torch.max(self.model(next_state)[0]).item())
+            target_f = self.model(state)
+            target_f = target_f.flatten()  #Ensuring target_f is 1D if it's not already
+            target_f[action] = target  #Updating the Q-value for the selected action
+            self.optimizer.zero_grad()
+            loss = F.mse_loss(target_f, self.model(state).flatten())
+            loss.backward()
+            self.optimizer.step()
+
+        #Decay epsilon after each replay to reduce exploration over time
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+
+
+
+    def update_performance(self, cumulative_reward, rounds_survived):
+        if cumulative_reward > self.best_performance["max_cumulative_reward"]:
+            self.best_performance["max_cumulative_reward"] = cumulative_reward
+        if rounds_survived > self.best_performance["max_rounds_survived"]:
+            self.best_performance["max_rounds_survived"] = rounds_survived
+
+    def save(self, name):
+        torch.save(self.model.state_dict(), name)
+
+    def load(self, name):
+        self.model.load_state_dict(torch.load(name))
+
+class TowerDefenseEnvironment:#Environment simulation for the tower defense game
+    def __init__(self, game_map : Game_Map):
+        self.state = self.reset()
+        self.max_rounds = G.num_of_rounds  # Use the actual round counter from the game
+        self.game_map = game_map
+
+    def reset(self):
+        #Reset the environment to its initial state (reseting the basic Game settings)
+        G.Player_HP = 1
+        G.num_of_rounds = 0
+        G.List_Of_Enemies = []
+        G.List_Of_Towers = []
+        G.Player_Money = 100
+
+        self.collect_state()
+        return self.state
+    def collect_state(self):
+        self.state = [ #Need to normalize everythng in the state (turn all the numbers into floats between 0 and 1) so we divide each variable correspondingly
+            G.Player_Money / 100.0,
+            G.Player_HP / 1.0,
+            len(G.List_Of_Towers) / 100.0,
+            len(G.List_Of_Enemies) / 100.0
+        ]
+
+
+
+def train_agent(episodes, state_size, action_size, Game_map : Game_Map):#Training the DQN agent
+    agent = DQNAgent(state_size, action_size)
+
+    for episode in range(episodes):
+        environment = TowerDefenseEnvironment(Game_map)
+        state = environment.reset()
+        cumulative_reward = 0
+        done = False
+
+        #Initializing the game with the RL agent
+        game = Game(environment.game_map, None, Random_Enemy_Algorithm, use_rl_agent=True, rl_agent=agent)
+        game.previous_state = game.collect_state()  #Initializing the previous state
+
+        while not done:
+            action = agent.act(state)
+            game.Run_Game()  #Run the game with the RL agent controlling the actions
+            #After running the game, we calculate the performance and reward
+            reward = game.calculate_reward(game.previous_enemies_killed)
+            state = game.collect_state()
+            cumulative_reward += reward
+
+            #Checking if the game is done
+            done = G.Player_HP <= 0
+
+            #If done, store the final experience
+            if done:
+                agent.remember(game.previous_state, game.previous_action, reward, state, done)
+
+            #Experience replay to train the agent
+            agent.replay(32)
+
+        #Updating the best performance
+        agent.update_performance(cumulative_reward, G.num_of_rounds)
+
+        if episode % 100 == 0:
+            print(f"Episode {episode} completed - Cumulative Reward: {cumulative_reward}")
+
+    save_model(agent)
+    save_performance(agent.best_performance)
+    return agent
+def save_performance(best_performance, filename='rl_algorithm_results.json'):
+    with open(filename, 'w') as f:
+        json.dump(best_performance, f)
+    print(f"Best performance saved to {filename}", "best performance: ", best_performance)
+
+#Saving the model
+def save_model(agent, filename='dqn_model.pth'):
+    agent.save(filename)
+    print(f"Model saved to {filename}")
+
+#Loading the model
+def load_model(agent, filename='dqn_model.pth'):
+    agent.load(filename)
+    print(f"Model loaded from {filename}")
+
 def Random_Enemy_Generator_Algorithm(game_map):
     Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
     Enemy_Options = cl.List_Of_Enemies_Options
@@ -563,7 +891,7 @@ def Random_Enemy_Algorithm(Game_map):
 def Remake_Enemy_list(Game_map : Game_Map, game_number):
     global Enemy_Options
     if (len(Enemy_Options) == 0):
-        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
         print("HAD TO REMAKE THE LIST")
     if (len(Game_map.Spawner_Order) == 0):
         Game_map.Spawner_Order = Game_map.Create_Spawner_Order()
@@ -623,66 +951,7 @@ def Convert_map_to_visual_map(matrix):
                 game_map2[row][space] = 8
     return game_map2
 
-class Game:
 
-    def __init__(self, Game_map : Game_Map, Tower_Algorithm : Tower_Algorithm, Enemy_Algorithm):
-        self.Game_map = Game_map
-        self.Tower_Algorithm = Tower_Algorithm
-        self.Enemy_Algorithm = Enemy_Algorithm
-
-    def Run_Game(self):
-        while True:  # MIGHT HAVE TO PUT A FOR LOOP IN HERE TO FIX IN CASE THE LOOP GETS STUCKED
-            num_of_enemies = len(G.List_Of_Enemies)
-            temp_num_of_enemies = len(G.List_Of_Enemies)
-            Remake_Enemy_list(self.Game_map, game_number=0)
-            for Tower in range(0, len(G.List_Of_Towers)):
-                self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
-            num_of_enemies = len(G.List_Of_Enemies)
-            for enemy in range(0, len(G.List_Of_Enemies)):
-                if enemy < len(G.List_Of_Enemies):
-                    self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
-                if (G.Player_HP <= 0):
-                    break
-                if (len(G.List_Of_Enemies) < num_of_enemies and len(G.List_Of_Enemies) > 0 and enemy < len(
-                        G.List_Of_Enemies)):
-                    self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
-                    num_of_enemies = len(G.List_Of_Enemies)
-            if (G.Player_HP > 0):
-                self.Rounds()
-            else:
-                break
-
-    def Rounds(self):
-        if G.num_of_rounds % 4 == 0:
-            self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
-        if (G.num_of_rounds % 40 == 0):
-            self.Game_map= self.Tower_Algorithm.Do_Turn(self.Game_map)
-            G.Enemy_Money = G.Enemy_Money + 20 * float(G.num_of_rounds / 100)
-            G.Player_Money = G.Player_Money + 20 * float(G.num_of_rounds / 100)
-        G.num_of_rounds = G.num_of_rounds + 1
-
-    def Fix_Map_Error(self):
-        for row in self.Game_map.map_2d:
-            for tile in row:
-                if isinstance(tile, cl.Enemy):
-                    if tile in G.List_Of_Enemies:
-                        pass
-                    else:
-                        self.Game_map.map_2d[tile.row][tile.column] = "road"
-        for i in range(0, num_spawners):
-            if isinstance(self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]], Enemy) or \
-                    self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]] == "spawner":
-                pass
-            else:
-                self.Game_map.map_2d[list_of_spawner_rows[i]][list_of_spawner_columns[i]] = "spawner"
-
-    def Check_Towers(self):
-        num = 0
-        for row in self.Game_map.map_2d:
-            for tile in row:
-                if isinstance(tile, cl.Tower):
-                    num+=1
-        return num
 
 def Reset_Game_Settings():
     G.num_of_rounds = 0
@@ -783,7 +1052,7 @@ if __name__ == "__main__":
                     Game_map.num_spawners = num_spawners
                     Game_map.Spawner_Order = copy.deepcopy(map_gen_atributes[4])
                     Actual_Game.Game_map = Game_map
-                    Enemy_Options = copy.deepcopy(simulations[game_number][1])
+                    Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
                     start_time = time.time()
 
                     start_time = time.time()
@@ -818,7 +1087,7 @@ if __name__ == "__main__":
         game_map_template = Game_Map()  # Assuming you have a template or initial map setup
         enemy_algorithm = Random_Enemy_Algorithm
         game_number = 0
-        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
         ga = Genetic_Tower_Algorithm(
             population_size=10,
             generations=10,
@@ -858,7 +1127,7 @@ if __name__ == "__main__":
         game_map_template = Game_Map()
         enemy_algorithm = Random_Enemy_Algorithm
         game_number = 0
-        Enemy_Options = copy.deepcopy(simulations[game_number][1])
+        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
         local_search = Local_Search_Algorithm(
             game_map_template=game_map_template,
             enemy_algorithm=enemy_algorithm,
@@ -871,4 +1140,16 @@ if __name__ == "__main__":
         with open("local_search_results.json", "w") as f:
             json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
             f.write("\n")
+    elif (Which_Test == "rla"):
+        state_size = 4  # The size of each state
+        action_size = 3  # The number of actions the agent can take
+        Game_map = Game_Map() #temporary map
+        trained_agent = train_agent(10, state_size, action_size, Game_map)
+
+        #Saving the trained model
+        save_model(trained_agent)
+
+        #Loading the trained model for future use
+        loaded_agent = DQNAgent(state_size, action_size)
+        load_model(loaded_agent)
     print("THE CODE RUN SUCCESFULLY")
