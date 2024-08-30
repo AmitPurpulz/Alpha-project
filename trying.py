@@ -38,26 +38,21 @@ class Game_Map:
         if self.num_spawners < 1:
             self.num_spawners = 1
         if self.num_spawners == 1:
-            self.map_2d[rows // 2][0] = "spawner"
+            column_distance = int(columns // 2 - (columns // 2 -2))
         elif difficulty < 5:
-            column_distance = int(columns // 2 - 2)
+            column_distance = int(columns // 2 -(columns // 2 -3))
         else:
-            column_distance = int(columns // 2 - 1)
+            column_distance = int(columns // 2 - (columns // 2 -4))
 
         self.list_of_spawner_rows = []
         self.list_of_spawner_columns = []
 
         for _ in range(self.num_spawners):
             while True:
-                if self.num_spawners != 1:
-                    row = random.randint(0, rows - 1)
-                    col = random.randint(0, column_distance)
-                    if self.map_2d[row][col] == "empty" and all(self.map_2d[row][i] != "spawner" for i in range(columns)):
-                        self.map_2d[row][col] = "spawner"
-                        break
-                else:
-                    row = rows // 2
-                    col = 0
+                row = random.randint(0, G.Rows - 1)
+                col = random.randint(0, column_distance)
+                if self.map_2d[row][col] == "empty" and all(self.map_2d[row][i] != "spawner" for i in range(columns)):
+                    self.map_2d[row][col] = "spawner"
                     break
 
             self.list_of_spawner_rows.append(row)
@@ -320,7 +315,7 @@ class Game:
             if (G.Player_HP > 0):
                 self.Rounds()
             else:
-                #print("enemies killed", G.enemies_killed, "rounds survived:", G.num_of_rounds)
+                print("enemies killed", G.enemies_killed, "rounds survived:", G.num_of_rounds)
                 break
 
     def Rounds(self):
@@ -332,7 +327,7 @@ class Game:
                 current_state = self.collect_state()
                 action_tuple = self.rl_agent.act(current_state)
                 action, tower_type, location = action_tuple
-
+                print("action: ", action_tuple)
 
                 reward = self.execute_action(action, tower_type, location) #doing the agent's action and giving a reward for the action
                 next_state = self.collect_state()
@@ -740,7 +735,6 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
         total_tower_types = len(cl.List_Of_Towers_Options)
         map_size = G.Rows * G.Columns  # total number of possible locations on the game_map
         total_action_space_size = (total_tower_types * map_size) + 2  #2 for the actions "upgrade_tower" and "skip_turn"
-
         #Making a Neural network with two hidden layers
         model = nn.Sequential(
             nn.Linear(self.state_size, 512),
@@ -821,23 +815,23 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
         self.model.load_state_dict(torch.load(name))
 
     def encode_action(self, action, tower_type, location):
-        # Define indices for action types
+        #Define indices for action types
         action_dict = {"place_tower": 0, "upgrade_tower": 1, "skip_turn": 2}
 
-        # Encode action type
+        #Encoding action type
         if (isinstance(action,str)):
             action_type_index = action_dict[action]
         else:
             action_type_index = action
 
-        # Only need to encode tower type and location for "place_tower"
+        #We only need to encode tower type and location for "place_tower"
         if action == "place_tower":
             tower_type_index = cl.List_Of_Towers_Options.index(tower_type)  # Get index of tower type
             location_index = location[0] * G.Columns + location[1]  # Encode location as a single number
             total_tower_types = len(cl.List_Of_Towers_Options)
             grid_size = G.Rows * G.Columns
 
-            # Combine indices into a single index
+            #Combininges the indices into a single index
             index = (action_type_index * total_tower_types * grid_size) + (
                         tower_type_index * grid_size) + location_index
         else:
@@ -849,19 +843,20 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
         action_dict = {0: "place_tower", 1: "upgrade_tower", 2: "skip_turn"}
 
         total_tower_types = len(cl.List_Of_Towers_Options)
-        grid_size = G.Rows * G.Columns
+        map_size = G.Rows * G.Columns
 
-        # Decode action type
-        action_type_index = index // (total_tower_types * grid_size)
-        action = action_dict[action_type_index]
+        #Decoding action type
+        if (index >= (total_tower_types*map_size)): #if index is upgrade_tower or skip_turn
+            action = action_dict[index-(total_tower_types*map_size)+1] #if index is 500 or 501 (upgrade_tower or skip_turn) set the action accordingly
+        else:
+            action = "place_tower"
 
         if action == "place_tower":
-            # Decode tower type and location
-            remainder = index % (total_tower_types * grid_size)
-            tower_type_index = remainder // grid_size
-            location_index = remainder % grid_size
+            #Decoding tower type and location
+            tower_type_index = int(index / map_size) #normal tower for indexes 0-99, shotgun tower for indexes 100-199 ect...
+            location_index = index - (tower_type_index * map_size)
 
-            # Convert location index back to (row, column)
+            #Converting location index back to (row, column)
             row = location_index // G.Columns
             column = location_index % G.Columns
             location = (row, column)
@@ -898,11 +893,11 @@ class TowerDefenseEnvironment:#Environment simulation for the tower defense game
 
 
 
-def train_agent(episodes, state_size, action_size, Game_map : Game_Map):#Training the DQN agent
+def train_agent(episodes, state_size, action_size, Game_map : Game_Map, agent : DQNAgent):#Training the DQN agent
     global Enemy_Options
-    agent = DQNAgent(state_size, action_size)
 
     for episode in range(episodes):
+        print("episode: ", episode)
         environment = TowerDefenseEnvironment(Game_map)
         state = environment.reset()
         cumulative_reward = 0
@@ -917,6 +912,7 @@ def train_agent(episodes, state_size, action_size, Game_map : Game_Map):#Trainin
             Reset_Game_Settings()
             game.Game_map = Game_Map()
             Enemy_Options = copy.deepcopy(simulations[0][0][1])
+            Enemy_Options = ["normal_enemy" for i in range(0,1000)]
             game.Run_Game()  #Run the game with the RL agent controlling the actions
             #After running the game, we calculate the performance and reward
             reward = game.calculate_reward(game.previous_enemies_killed)
@@ -953,10 +949,14 @@ def save_model(agent, filename='dqn_model.pth'):
     agent.save(filename)
     print(f"Model saved to {filename}")
 
+
 #Loading the model
 def load_model(agent, filename='dqn_model.pth'):
     agent.load(filename)
     print(f"Model loaded from {filename}")
+
+
+
 
 def Random_Enemy_Generator_Algorithm(game_map):
     Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
@@ -1016,6 +1016,7 @@ def Create_Enemy(Game_map : Game_Map, enemy):
     a = enemy_health_increase_rate
     r = max(G.num_of_rounds//40,1)
     enemy.health = round(enemy.initial_health * (1.2)**(r))
+    enemy.health /= 2
     G.List_Of_Enemies.append(enemy)
     return Game_map.map_2d
 
@@ -1239,12 +1240,13 @@ if __name__ == "__main__":
             state_size = 4  # The size of each state
             action_size = 3  # The number of actions the agent can take
             Game_map = Game_Map() #temporary map
-            trained_agent = train_agent(40000, state_size, action_size, Game_map)
+
+            # Loading the trained model for future use
+            loaded_agent = DQNAgent(state_size, action_size)
+            load_model(loaded_agent)
+            loaded_agent.epsilon = 0.1
+            trained_agent = train_agent(200, state_size, action_size, Game_map, loaded_agent)
 
             #Saving the trained model
             save_model(trained_agent)
-
-            #Loading the trained model for future use
-            loaded_agent = DQNAgent(state_size, action_size)
-            load_model(loaded_agent)
     print("THE CODE RUN SUCCESFULLY")
