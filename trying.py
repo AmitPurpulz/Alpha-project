@@ -292,6 +292,7 @@ class Game:
         self.Enemy_Algorithm = Enemy_Algorithm
         self.use_rl_agent = use_rl_agent  #A Flag to determine if RL agent is used
         self.rl_agent = rl_agent  #The RL agent, if used
+        self.rl_agent : DQNAgent
         self.previous_state = None  #To store the previous state
         self.previous_action = None  #To store the previous action
         self.previous_enemies_killed = 0  #To track the number of enemies killed
@@ -319,7 +320,7 @@ class Game:
             if (G.Player_HP > 0):
                 self.Rounds()
             else:
-                print("enemies killed", G.enemies_killed, "rounds survived:", G.num_of_rounds)
+                #print("enemies killed", G.enemies_killed, "rounds survived:", G.num_of_rounds)
                 break
 
     def Rounds(self):
@@ -337,10 +338,16 @@ class Game:
                 next_state = self.collect_state()
 
                 reward += self.calculate_reward(G.enemies_killed - initial_enemies_killed)  #Calculating the reward based on the game state
+                reward += self.calculate_reward_according_to_rounds()
+
+                #
+                if (reward > self.rl_agent.biggest_reward):
+                    self.rl_agent.biggest_reward = reward
+                #
 
                 #Saving the experience to the agent's memory
                 self.rl_agent.remember(current_state, action_tuple, reward, next_state, False)
-
+                #print("reward:", reward)
                 #Updating the previous state and action
                 self.previous_state = current_state
                 self.previous_action = action_tuple
@@ -386,13 +393,11 @@ class Game:
                 tower = random.choice(cl.List_Of_Towers_Options)(0, 0)  # Choose a random tower
                 row = random.randint(0, G.Rows - 1)
                 column = random.randint(0, G.Columns - 1)
+                tower.row,tower.column = row, column
             if G.Player_Money >= tower.price:  # Check if the player can afford the tower
-                row = random.randint(0, G.Rows - 1)
-                column = random.randint(0, G.Columns - 1)
-                if (self.Game_map.map_2d[row][column] != "empty"):
+                if (self.Game_map.map_2d[tower.row][tower.column] != "empty"):
                     reward -= 5 #if the agent places a tower in an invalid location get a big punishment
                 else:
-                    tower.row, tower.column = row, column
                     self.Game_map.map_2d[tower.row][tower.column] = tower
                     G.List_Of_Towers.append(tower)
                     G.Player_Money -= tower.price
@@ -424,7 +429,6 @@ class Game:
         #Calculate how many enemies were killed during this round
         enemies_killed_this_round = G.enemies_killed - initial_enemies_killed
         reward = enemies_killed_this_round  # Reward is based on enemies killed during this round
-
         if G.Player_HP > 0:
             reward += G.Player_HP * 5  #Bonus reward for keeping the player alive
 
@@ -432,10 +436,28 @@ class Game:
 
     def calculate_reward_based_on_tower_location(self, tower : cl.Tower): #this function rewards the agent for each tile that the tower he places can reach and a big punishment for placing the tower in a place with no tiles that are in it's attack_range
         tiles_in_tower_range = self.Game_map.Surrounding_tiles(tower,tower.row,tower.column)
+        reward = 0
         if (tiles_in_tower_range == 0):
-            return -5
+            reward = -5
         else:
-            return tiles_in_tower_range
+            reward += tiles_in_tower_range
+            for row in self.Game_map.map_2d:
+                for tile in row:
+                    if isinstance(tile, cl.Enemy):
+                        reward += 3 #get a bigger reward for placing a tower in range of enemies rather than in range of roads or spawners
+        return reward
+
+    def calculate_reward_according_to_rounds(self):
+        if G.num_of_rounds <= 100:
+            # Gradual increase in the early rounds
+            reward = 1 + (G.num_of_rounds / 100) * 2  # Reward between 1 and 3
+        elif G.num_of_rounds <= 200:
+            # More significant increase in the medium rounds
+            reward = 3 + ((G.num_of_rounds - 100) / 100) * 5  # Reward between 3 and 8
+        else:
+            # Slower increase in the later rounds
+            reward = 8 + (G.num_of_rounds - 200) / 200  # Reward grows slowly after 200 rounds
+        return reward
 
     def collect_state(self):
         #Collect the current state for the RL agent
@@ -712,6 +734,7 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
             "max_cumulative_reward": float('-inf'),
             "max_rounds_survived": 0
         }
+        self.biggest_reward = 0
 
     def _build_model(self):
         total_tower_types = len(cl.List_Of_Towers_Options)
@@ -720,11 +743,11 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
 
         #Making a Neural network with two hidden layers
         model = nn.Sequential(
-            nn.Linear(self.state_size, 2048),
+            nn.Linear(self.state_size, 512),
             nn.ReLU(),
-            nn.Linear(2048,2048),
+            nn.Linear(512,512),
             nn.ReLU(),
-            nn.Linear(2048, total_action_space_size)
+            nn.Linear(512, total_action_space_size)
         )
         return model
 
@@ -915,6 +938,7 @@ def train_agent(episodes, state_size, action_size, Game_map : Game_Map):#Trainin
 
         if episode % 100 == 0:
             print(f"Episode {episode} completed - Cumulative Reward: {cumulative_reward}")
+            print(agent.biggest_reward, agent.best_performance)
 
     save_model(agent)
     save_performance(agent.best_performance)
@@ -1193,6 +1217,7 @@ if __name__ == "__main__":
             json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
             f.write("\n")
     elif (Which_Test == "lsa"):
+
         game_map_template = Game_Map()
         enemy_algorithm = Random_Enemy_Algorithm
         game_number = 0
@@ -1210,15 +1235,16 @@ if __name__ == "__main__":
             json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
             f.write("\n")
     elif (Which_Test == "rla"):
-        state_size = 4  # The size of each state
-        action_size = 3  # The number of actions the agent can take
-        Game_map = Game_Map() #temporary map
-        trained_agent = train_agent(20000, state_size, action_size, Game_map)
+        for i in range(0, 3):
+            state_size = 4  # The size of each state
+            action_size = 3  # The number of actions the agent can take
+            Game_map = Game_Map() #temporary map
+            trained_agent = train_agent(40000, state_size, action_size, Game_map)
 
-        #Saving the trained model
-        save_model(trained_agent)
+            #Saving the trained model
+            save_model(trained_agent)
 
-        #Loading the trained model for future use
-        loaded_agent = DQNAgent(state_size, action_size)
-        load_model(loaded_agent)
+            #Loading the trained model for future use
+            loaded_agent = DQNAgent(state_size, action_size)
+            load_model(loaded_agent)
     print("THE CODE RUN SUCCESFULLY")
