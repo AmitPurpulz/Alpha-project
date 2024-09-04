@@ -125,8 +125,7 @@ class Game_Map:
     def Surrounding_tiles(self, tower: Tower, tower_row, tower_column):
         num_of_tiles = 0
         for row in range(max(0, tower_row - tower.attack_range), min(rows, tower_row + tower.attack_range + 1)):
-            for column in range(max(0, tower_column - tower.attack_range),
-                                min(columns, tower_column + tower.attack_range + 1)):
+            for column in range(max(0, tower_column - tower.attack_range), min(columns, tower_column + tower.attack_range + 1)):
                 if (self.map_2d[row][column] in ["road", "spawner"] or isinstance(self.map_2d[row][column], cl.Enemy)):
                     num_of_tiles += 1
         return num_of_tiles
@@ -186,15 +185,16 @@ class Tower_Algorithm:
                     if (self.Location_Strategy == "Base"):
                         if (game_map.Check_Adjecent_To_Base(row, column)):
                             return row, column
-                    elif (self.Location_Strategy == "Spawmer"):
+                    elif (self.Location_Strategy == "Spawner"):
                         if (game_map.Check_Adjecent_To_Spawner(row, column)):
                             return row, column
-                    list_of_empty_tiles.append((row, column))
-                    num_of_tiles = game_map.Surrounding_tiles(tower, row, column)
-                    if num_of_tiles > biggest_num_of_tiles:
-                        biggest_num_of_tiles = num_of_tiles
-                        best_location_row = row
-                        best_location_column = column
+                    elif (self.Location_Strategy == "Tiles"):
+                        list_of_empty_tiles.append((row, column))
+                        num_of_tiles = game_map.Surrounding_tiles(tower, row, column)
+                        if num_of_tiles > biggest_num_of_tiles:
+                            biggest_num_of_tiles = num_of_tiles
+                            best_location_row = row
+                            best_location_column = column
 
         if (best_location_row == 0 and best_location_column == 0 and game_map.map_2d[best_location_row][best_location_column] != "empty"):
             if (len(list_of_empty_tiles) == 0):
@@ -205,9 +205,11 @@ class Tower_Algorithm:
 
     def Place_Tower(self, game_map : Game_Map, Min_Money : float):
         global towers
-        if (game_map.Check_Empty_Tiles() == 0):
+        if (game_map.Check_Empty_Tiles() == 0): #if no space to place towers, then return the map and dont place a tower
             return game_map.map_2d
-        if G.Player_Money < cl.NormalTower(0,0).price:
+        if G.Player_Money < cl.NormalTower(0,0).price: #if Player money is smaller than the price of the cheapest tower, then return the map and dont place a tower
+            return game_map.map_2d
+        if (G.Player_Money - cl.NormalTower(0,0).price < Min_Money): #if Player money minus the price of the cheapest unit will be smaller than the minimum amount of money the Player must have left at the end of the turn, then return the map and dont place a tower
             return game_map.map_2d
         if (len(self.Tower_Strategy) > 0 ):
             Tower_Options = copy.deepcopy(self.Tower_Strategy)
@@ -237,38 +239,56 @@ class Tower_Algorithm:
         for tower in self.Tower_Strategy:
             if tower.price < cheapest_tower_price:
                 cheapest_tower_price = tower.price
+                cheapest_tower = tower
         Min_Money = total_money * (1-self.Money_Strategy)#the minimum amount of money that must be left at the end of the turn (according to the Money_strategy)
-        while G.Player_Money > total_money * (1-self.Money_Strategy) and G.Player_Money >= cl.NormalTower(0,0).price and game_map.Check_Empty_Tiles() > 0:
+        while G.Player_Money > Min_Money and G.Player_Money >= cheapest_tower_price and  game_map.Check_Empty_Tiles() > 0:
             Upgrades_Available = False
+            if (G.Player_Money- cheapest_tower_price < Min_Money and G.Player_Money - cheapest_tower.upgrade_1_cost < Min_Money): #if the player doesnt have enough money to spend even on the cheapest things then end the function and return the game_map
+                return game_map
+
+            temp_list_of_towers = copy.deepcopy(G.List_Of_Towers)
+            Upgrades_Available_1 = False
+            Upgrades_Available_2 = False
+            for t in temp_list_of_towers: #check if there are any towers that can be upgraded
+                t : cl.Tower
+                if not t.upgrade_1:
+                    Upgrades_Available1 = True
+                if not t.upgrade_2 and t.upgrade_1:
+                    Upgrades_Available_2 = True
+
+
+            if (self.Upgrade_Strategy == 1 and not Upgrades_Available_1): #i the tower_algorithm prioretises upgrading towers but there arent any available to upgrade, place a tower instead
+                game_map.map_2d = self.Place_Tower(game_map,Min_Money)
+
             if (self.Upgrade_Strategy == 0 and G.Player_Money >= Normal_Tower_Instance.price and G.Player_Money-cheapest_tower_price >= Min_Money):
                 game_map.map_2d = self.Place_Tower(game_map, Min_Money)
+
             elif (self.Upgrade_Strategy == 1):
-                for tower in G.List_Of_Towers:
-                    if (not tower.upgrade_1) and G.Player_Money >= tower.upgrade_1_cost and G.Player_Money-tower.upgrade_1_cost >= Min_Money:
-                        tower.Upgrade_Tower()
-                        Upgrades_Available = True
-                        break
-                for tower in G.List_Of_Towers:
-                    if (not tower.upgrade_2) and G.Player_Money >= tower.upgrade_2_cost and G.Player_Money-tower.upgrade_2_cost >= Min_Money:
-                        tower.Upgrade_Tower()
-                        Upgrades_Available = True
-                        break
+                tower = G.List_Of_Towers[random.randint(0,len(G.List_Of_Towers)-1)]
+                while (G.Player_Money - tower.upgrade_1_cost < Min_Money or tower.upgrade_1 and tower.upgrade_1):
+                    tower = G.List_Of_Towers[random.randint(0,len(G.List_Of_Towers)-1)]
+                tower.Upgrade_Tower()
+
             elif (self.Upgrade_Strategy == 2):
-                for tower in G.List_Of_Towers:
-                    if (not tower.upgrade_2) and G.Player_Money >= tower.upgrade_2_cost and G.Player_Money-tower.upgrade_2_cost >= Min_Money:
-                        tower.Upgrade_Tower()
-                        Upgrades_Available = True
-                        break
-                for tower in G.List_Of_Towers:
-                    if (not tower.upgrade_1) and G.Player_Money >= tower.upgrade_1_cost and G.Player_Money-tower.upgrade_1_cost >= Min_Money:
-                        tower.Upgrade_Tower()
-                        Upgrades_Available = True
-                        break
-            if (not Upgrades_Available and G.Player_Money >= Normal_Tower_Instance.price):
+                if (not Upgrades_Available_2 and not Upgrades_Available_1):
+                    game_map.map_2d = self.Place_Tower(game_map, Min_Money)
+                elif (not Upgrades_Available_2 and Upgrades_Available_1):
+                    while (G.Player_Money - tower.upgrade_1_cost < Min_Money or tower.upgrade_1 and tower.upgrade_1):
+                        tower = G.List_Of_Towers[random.randint(0, len(G.List_Of_Towers) - 1)]
+                    tower.Upgrade_Tower()
+                else:
+                    tower = G.List_Of_Towers[random.randint(0, len(G.List_Of_Towers) - 1)]
+                    while (G.Player_Money - tower.upgrade_2_cost < Min_Money or tower.upgrade_2 and not tower.upgrade_1):
+                        tower = G.List_Of_Towers[random.randint(0,len(G.List_Of_Towers)-1)]
+                    tower.Upgrade_Tower()
+
+
+            if (not Upgrades_Available_1 and not Upgrades_Available_2 and G.Player_Money >= Normal_Tower_Instance.price):
                 if (G.Player_Money - cheapest_tower_price < Min_Money):
                     break
                 else:
                     game_map.map_2d = self.Place_Tower(game_map, Min_Money)
+
         return game_map
 
     def Blocks_In_Range(self,temp_map,tower):  # this is used to mark blocks in the map as blocks who are in range of the current towers
@@ -391,7 +411,7 @@ class Game:
                 tower.row,tower.column = row, column
             if G.Player_Money >= tower.price:  # Check if the player can afford the tower
                 if (self.Game_map.map_2d[tower.row][tower.column] != "empty"):
-                    reward -= 5 #if the agent places a tower in an invalid location get a big punishment
+                    reward -= 15 #if the agent places a tower in an invalid location get a big punishment
                 else:
                     self.Game_map.map_2d[tower.row][tower.column] = tower
                     G.List_Of_Towers.append(tower)
@@ -399,7 +419,7 @@ class Game:
                     reward += 10 #if the agent places a tower in a valid location get a major reward
                     reward += self.calculate_reward_based_on_tower_location(tower) #calulates an extra reward based on how good the location of the tower is (how many tiles is in the tower's attack range)
             else:
-                reward -= 5 #if agent chooses a tower it doesnt have money for get a big punishment
+                reward -= 10 #if agent chooses a tower it doesnt have money for get a big punishment
         elif action == 'upgrade_tower' or action == 1:
             if len(G.List_Of_Towers) > 0:
                 tower = random.choice(G.List_Of_Towers)  # Choose a random existing tower to upgrade
@@ -423,7 +443,7 @@ class Game:
     def calculate_reward(self, initial_enemies_killed):
         #Calculate how many enemies were killed during this round
         enemies_killed_this_round = G.enemies_killed - initial_enemies_killed
-        reward = enemies_killed_this_round  # Reward is based on enemies killed during this round
+        reward = enemies_killed_this_round * 5  # Reward is based on enemies killed during this round
         if G.Player_HP > 0:
             reward += G.Player_HP * 5  #Bonus reward for keeping the player alive
 
@@ -433,13 +453,13 @@ class Game:
         tiles_in_tower_range = self.Game_map.Surrounding_tiles(tower,tower.row,tower.column)
         reward = 0
         if (tiles_in_tower_range == 0):
-            reward = -5
+            reward = -15
         else:
-            reward += tiles_in_tower_range
+            reward += tiles_in_tower_range * 2
             for row in self.Game_map.map_2d:
                 for tile in row:
                     if isinstance(tile, cl.Enemy):
-                        reward += 3 #get a bigger reward for placing a tower in range of enemies rather than in range of roads or spawners
+                        reward += 5 #get a bigger reward for placing a tower in range of enemies rather than in range of roads or spawners
         return reward
 
     def calculate_reward_according_to_rounds(self):
@@ -527,6 +547,13 @@ class Local_Search_Algorithm:
             #Changing and modifying the current algorithm to make a new one
             new_algorithm = self.modify_algorithm(copy.deepcopy(current_algorithm))
             new_performance = self.evaluate_algorithm(new_algorithm)
+
+
+            with open("local_search_algorithm_all_results.json", 'a') as f:
+                json.dump({"best_algorithm": serialize_algorithm(new_algorithm), "best_performance": new_performance}, f)
+                f.write("\n")
+
+
             print("current iteration: ", iteration, "performance:", new_performance)
             #Comparing the new performance with the best performance so far
             if new_performance["enemies_killed"] > self.best_performance["enemies_killed"]:
@@ -588,6 +615,10 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
             print(game_stats)
             print(len(Enemy_Options))
             performance_data.append(game_stats)
+
+            with open("genetic_algorithm_all_results.json", 'a') as f:
+                json.dump({"best_algorithm": serialize_algorithm(game_stats["algorithm"]), "best_performance": dict(list(game_stats.items())[1:])}, f)
+                f.write("\n")
 
         #Sorting the algorithms by performance (by enemies_killed, rounds survived, etc.) so that we can choose the best ones out of them
         performance_data.sort(key=lambda x: x["enemies_killed"], reverse=True)
@@ -679,9 +710,9 @@ class Simulated_Annealing_Algorithm:
         rounds_survived = G.num_of_rounds
 
         performance_score = {
-            "duration_seconds": game_duration,
             "enemies_killed": enemies_killed,
-            "rounds_survived": rounds_survived
+            "rounds_survived": rounds_survived,
+            "duration_seconds": game_duration
         }
         return performance_score
 
@@ -693,7 +724,12 @@ class Simulated_Annealing_Algorithm:
             modify_random_attribute(new_algorithm)
 
             current_performance = self.evaluate_algorithm(self.current_algorithm)
+            with open("simulated_annealing_algorithm_all_results.json", 'a') as f:
+                json.dump({"best_algorithm": serialize_algorithm(new_algorithm), "best_performance": current_performance}, f)
+                f.write("\n")
+
             new_performance = self.evaluate_algorithm(new_algorithm)
+
             print("iteration: ", i, ", current performance: ", current_performance, " new performance:", new_performance)
             current_score = new_performance["enemies_killed"]
             best_score = best_performance["enemies_killed"]
@@ -975,22 +1011,23 @@ def Random_Enemy_Algorithm(Game_map):
     i = 0
     enemy = 0
     game_map = Game_map.map_2d
-    while (normal_enemy_instance.price < G.Enemy_Money and Game_map.Num_Of_Spawners_Available() > 0):
-        Enemies = copy.deepcopy(cl.List_Of_Enemies_Options)
-        if (i == len(Enemy_Options)):
-            break
-        enemy_name = Enemy_Options[i]
-        for e in Enemies:
-            e : cl.Enemy
-            if (enemy_name == e.name):
-                enemy = e
+    if (G.num_of_rounds >= 10):
+        while (normal_enemy_instance.price < G.Enemy_Money and Game_map.Num_Of_Spawners_Available() > 0):
+            Enemies = copy.deepcopy(cl.List_Of_Enemies_Options)
+            if (i == len(Enemy_Options)):
                 break
-        if (enemy.price > G.Enemy_Money):
-            i = i +1
-        else:
-            game_map = Create_Enemy(Game_map, enemy)
-            G.Enemy_Money = G.Enemy_Money - enemy.price
-            Enemy_Options.pop(i)
+            enemy_name = Enemy_Options[i]
+            for e in Enemies:
+                e : cl.Enemy
+                if (enemy_name == e.name):
+                    enemy = e
+                    break
+            if (enemy.price > G.Enemy_Money):
+                i = i +1
+            else:
+                game_map = Create_Enemy(Game_map, enemy)
+                G.Enemy_Money = G.Enemy_Money - enemy.price
+                Enemy_Options.pop(i)
     return game_map
 
 def Remake_Enemy_list(Game_map : Game_Map, game_number):
@@ -1014,9 +1051,8 @@ def Create_Enemy(Game_map : Game_Map, enemy):
     enemy.OnSpawner = True
     enemy_health_increase_rate = 0.01
     a = enemy_health_increase_rate
-    r = max(G.num_of_rounds//40,1)
+    r = max(G.num_of_rounds//100,1)
     enemy.health = round(enemy.initial_health * (1.2)**(r))
-    enemy.health /= 2
     G.List_Of_Enemies.append(enemy)
     return Game_map.map_2d
 
@@ -1037,14 +1073,14 @@ def save_matrices_to_json(matrices, filename):
 
 
 
-def Reset_Game_Settings():
+def Reset_Game_Settings(Player_Money = 100, Enemy_Money = 10, Player_HP = 1):
     G.num_of_rounds = 0
     G.List_Of_Towers = []
     G.List_Of_Enemies = []
-    G.Player_Money = 100
+    G.Player_Money = Player_Money
     G.enemies_killed = 0
-    G.Enemy_Money = 10
-    G.Player_HP = 1
+    G.Enemy_Money = Enemy_Money
+    G.Player_HP = Player_HP
 
 
 def modify_random_attribute(algorithm : Tower_Algorithm):
@@ -1122,7 +1158,7 @@ if __name__ == "__main__":
     with open('simulations.json', 'r') as f:
         simulations = json.load(f)
     Which_Test = input().lower()
-    if (Which_Test == "algorithms"):
+    if (Which_Test == "strategies"):
         for algorithm in algorithms:
             Game_map = Game_Map()
             Actual_Game = Game(Game_map, algorithm, Random_Enemy_Algorithm)
@@ -1143,6 +1179,8 @@ if __name__ == "__main__":
                     Enemy_Options = next(enemy_options_generator("simulations.json"))
 
                     Game_map.map_2d = game_map
+                    G.Rows = len(Game_map.map_2d)
+                    G.Columns = len(Game_map.map_2d[0])
                     Game_map.list_of_spawner_rows = list_of_spawner_rows
                     Game_map.list_of_spawner_columns = list_of_spawner_columns
                     Game_map.num_spawners = num_spawners
@@ -1177,66 +1215,63 @@ if __name__ == "__main__":
                 with open(filename, writing_style) as f:
                     json.dump(game_stats, f)
                     f.write("\n")
-    elif (Which_Test == "ga"):
-        game_map_template = Game_Map()  # Assuming you have a template or initial map setup
-        enemy_algorithm = Random_Enemy_Algorithm
-        game_number = 0
-        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
-        ga = Genetic_Tower_Algorithm(
-            population_size=10,
-            generations=10,
-            mutation_rate=0.1,
-            game_map=game_map_template,
-            enemy_algorithm=enemy_algorithm
-        )
+    elif (Which_Test == "algorithms"):
+        for game_number in range(0,10):
+            if (game_number == 0):
+                saving_style = "w"
+            else:
+                saving_style = "a"
+            game_map_template = Game_Map()  # Assuming you have a template or initial map setup
+            enemy_algorithm = Random_Enemy_Algorithm
+            Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
+            ga = Genetic_Tower_Algorithm(
+                population_size=10,
+                generations=10,
+                mutation_rate=0.1,
+                game_map=game_map_template,
+                enemy_algorithm=enemy_algorithm
+            )
 
-        best_algorithm, best_stats = ga.run()
-        print("Best algorithm found:", best_algorithm.__dict__)
-        print("Best stats:", best_stats)
-        with open("genetic_algorithm_results.json", "w") as f:
-            json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_stats}, f)
-            f.write("\n")
-    elif (Which_Test == "sa"):
-        game_number = 0
-        game_map_template = Game_Map()  # Template map setup
-        enemy_algorithm = Random_Enemy_Algorithm
+            best_algorithm, best_stats = ga.run()
+            print("Best algorithm found:", best_algorithm.__dict__)
+            print("Best stats:", best_stats)
+            with open("genetic_algorithm_results.json", saving_style) as f:
+                json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_stats}, f)
+                f.write("\n")
 
-        simulated_annealing = Simulated_Annealing_Algorithm(
-            game_map_template=game_map_template,
-            enemy_algorithm=enemy_algorithm,
-            initial_algorithm=All_Money_Algorithm_instance, #this doesnt matter which algorithm we use for the start i just used this one because its the basic one
-            initial_temperature=100.0,
-            cooling_rate=0.95,
-            iterations=10 #Need to change this number
-        )
+            Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
+            simulated_annealing = Simulated_Annealing_Algorithm(
+                game_map_template=game_map_template,
+                enemy_algorithm=enemy_algorithm,
+                initial_algorithm=All_Money_Algorithm_instance, #this doesnt matter which algorithm we use for the start i just used this one because its the basic one
+                initial_temperature=100.0,
+                cooling_rate=0.95,
+                iterations=100 #Need to change this number
+            )
 
-        best_algorithm, best_performance = simulated_annealing.run()
-        print("Best algorithm found:", best_algorithm.__dict__)
-        print("Best performance:", best_performance)
+            best_algorithm, best_performance = simulated_annealing.run()
+            print("Best algorithm found:", best_algorithm.__dict__)
+            print("Best performance:", best_performance)
 
-        with open("simulated_annealing_results.json", "w") as f:
-            json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
-            f.write("\n")
-    elif (Which_Test == "lsa"):
+            with open("simulated_annealing_results.json", saving_style) as f:
+                json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
+                f.write("\n")
 
-        game_map_template = Game_Map()
-        enemy_algorithm = Random_Enemy_Algorithm
-        game_number = 0
-        Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
-        local_search = Local_Search_Algorithm(
-            game_map_template=game_map_template,
-            enemy_algorithm=enemy_algorithm,
-            iterations=10  #Need to change this number
-        )
+            Enemy_Options = copy.deepcopy(simulations[0][game_number][1])
+            local_search = Local_Search_Algorithm(
+                game_map_template=game_map_template,
+                enemy_algorithm=enemy_algorithm,
+                iterations=100  #Need to change this number
+            )
 
-        best_algorithm, best_performance = local_search.run()
-        print("Best algorithm found:", best_algorithm.__dict__)
-        print("Best performance:", best_performance)
-        with open("local_search_results.json", "w") as f:
-            json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
-            f.write("\n")
+            best_algorithm, best_performance = local_search.run()
+            print("Best algorithm found:", best_algorithm.__dict__)
+            print("Best performance:", best_performance)
+            with open("local_search_results.json", saving_style) as f:
+                json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance}, f)
+                f.write("\n")
     elif (Which_Test == "rla"):
-        for i in range(0, 3):
+        for i in range(0, 100):
             state_size = 4  # The size of each state
             action_size = 3  # The number of actions the agent can take
             Game_map = Game_Map() #temporary map
@@ -1244,9 +1279,13 @@ if __name__ == "__main__":
             # Loading the trained model for future use
             loaded_agent = DQNAgent(state_size, action_size)
             load_model(loaded_agent)
-            loaded_agent.epsilon = 0.1
-            trained_agent = train_agent(200, state_size, action_size, Game_map, loaded_agent)
+            trained_agent = train_agent(1000, state_size, action_size, Game_map, loaded_agent)
 
             #Saving the trained model
             save_model(trained_agent)
+    elif ("reset"):
+        Algorithms = ["simulated_annealing_results", "genetic_algorithm_results", "local_search_results","simulated_annealing_algorithm_all_results", "genetic_algorithm_all_results","local_search_algorithm_all_results"]
+        for algorithm in Algorithms:
+            with open(f"D:/Alpha-project/{algorithm}.json", 'w') as f:
+                pass
     print("THE CODE RUN SUCCESFULLY")
