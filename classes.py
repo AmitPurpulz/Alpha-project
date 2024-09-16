@@ -61,6 +61,8 @@ class Enemy:
         return row, column
 
     def Move(self, map_2d: list):
+        if (self not in G.List_Of_Enemies):
+            return map_2d
         #this is a temporary fix to the problem where the base gets deleted by a enemy who is in the same location as the base but doesnt get erased for some reason
         if (self.row == G.Rows//2 and self.column == G.Columns-1):
             print("THIS IS ON BASE")
@@ -104,7 +106,8 @@ class Enemy:
         return map_2d
 
 class Tower:
-    def __init__(self, damage, firerate, attack_range, attack_type, price, row, column):
+    def __init__(self, name,damage, firerate, attack_range, attack_type, price, row, column):
+        self.name = name
         self.damage = damage
         self.firerate = firerate
         self.attack_range = attack_range
@@ -151,7 +154,7 @@ class Tower:
                     strongest_enemy = 0
                     strongest_enemy_health = 0
                     weakest_enemy = 0
-                    weakest_enemy_health = sys.maxsize
+                    weakest_enemy_health = 10**10 #A large number to ensure that the weakest_enemy_health is
                     for enemy in Enemies_In_Range:
                         if enemy.health > strongest_enemy_health:
                             strongest_enemy = enemy
@@ -177,32 +180,23 @@ class Tower:
 
 class NormalTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=2, firerate=1, attack_range=2, attack_type="first" ,price=10, row=row, column=column)
+        super().__init__(name="normal_tower",damage=3, firerate=1, attack_range=2, attack_type="first" ,price=10, row=row, column=column)
 
 class ShotgunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=1, firerate=2, attack_range=1, attack_type="first", price=20, row=row, column=column)
-
-    def Attack_Enemy(self, enemy: Enemy, game_map):
-        # Modified attack to handle shotgun's spread (5 pellets)
-        for _ in range(5):  # 5 pellets per shot
-            enemy.health -= self.damage
-        if enemy.health <= 0:
-            game_map = enemy.Destroy_Enemy(game_map)
-            G.Player_Money += enemy.money_drop
-        return game_map
+        super().__init__(name="shotgun_tower",damage=6, firerate=2, attack_range=1, attack_type="first", price=20, row=row, column=column)
 
 class MachinegunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=1, firerate=0.5, attack_range=2, attack_type="first", price=30, row=row, column=column)
+        super().__init__(name="machinegun_tower",damage=1.5, firerate=0.5, attack_range=2, attack_type="first", price=30, row=row, column=column)
 
 class SniperTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=5, firerate=4, attack_range=8, attack_type="first", price=40, row=row, column=column)
+        super().__init__(name="sniper_tower",damage=8, firerate=4, attack_range=5, attack_type="first", price=40, row=row, column=column)
 
 class MinigunTower(Tower):
     def __init__(self, row, column):
-        super().__init__(damage=1, firerate=0.25, attack_range=2, attack_type="first", price=50, row=row, column=column)
+        super().__init__(name="minigun_tower",damage=1.5, firerate=0.25, attack_range=2, attack_type="first", price=50, row=row, column=column)
 
 # Example towers
 towers_list = [NormalTower(0, 0), ShotgunTower(0, 0), MachinegunTower(0, 0), SniperTower(0, 0), MinigunTower(0, 0)]
