@@ -206,7 +206,7 @@ class Tower_Algorithm:
         if (len(self.Tower_Attack_Strategy) > 0):
             Attack_Type_Options = self.Tower_Attack_Strategy
         else:
-            Attack_Type_Options = ["first","last","strongest","weakest"]
+            Attack_Type_Options = cl.towers_attack_types
         tower.attack_type = Attack_Type_Options[random.randint(0,len(Attack_Type_Options)-1)]
         game_map.map_2d[tower.row][tower.column] = tower
         G.List_Of_Towers.append(tower)
@@ -282,27 +282,27 @@ class Tower_Algorithm:
                 if (temp_map[row][column] in ["road", "spawner"] or isinstance(temp_map[row][column], cl.Enemy)):
                     temp_map[row][column] = "marked"
         return temp_map
-class Game:
 
+class Game:
     def __init__(self, Game_map: Game_Map, Tower_Algorithm: Tower_Algorithm, Enemy_Algorithm, use_rl_agent=False,
                  rl_agent=None):
         self.Game_map = Game_map
         self.Tower_Algorithm = Tower_Algorithm
         self.Enemy_Algorithm = Enemy_Algorithm
-        self.use_rl_agent = use_rl_agent  #A Flag to determine if RL agent is used
-        self.rl_agent = rl_agent  #The RL agent, if used
+        self.use_rl_agent = use_rl_agent  # A Flag to determine if RL agent is used
+        self.rl_agent = rl_agent  # The RL agent, if used
         self.rl_agent : DQLAgent
-        self.previous_state = None  #To store the previous state
-        self.previous_action = None  #To store the previous action
-        self.previous_enemies_killed = 0  #To track the number of enemies killed
+        self.state = None  # To store the current state
+        self.previous_state = None
+        self.current_reward = None # To store the reward for the action
+        self.current_action = None # To store the current action
+        self.previous_enemies_killed = 0  # To track the number of enemies killed
     def Run_Game(self):
-        global game_number
 
-        #screen, Cell_size = Pygame_animation(self.Game_map.map_2d)
+        # screen, Cell_size = Pygame_animation(self.Game_map.map_2d)
         while True:
-
-            #draw_grid(self.Game_map.map_2d, screen, Cell_size)
-            #Run_Animation(screen, self.Game_map.map_2d)
+            # draw_grid(self.Game_map.map_2d, screen, Cell_size)
+            # Run_Animation(screen, self.Game_map.map_2d)
             Remake_Enemy_list(self.Game_map)
             for Tower in range(0, len(G.List_Of_Towers)):
                 self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
@@ -316,6 +316,12 @@ class Game:
                         G.List_Of_Enemies)):
                     self.Game_map.map_2d = G.List_Of_Enemies[enemy].Move(self.Game_map.map_2d)
                     num_of_enemies = len(G.List_Of_Enemies)
+
+
+            if (self.previous_state != None):
+                self.state = self.collect_state()  # except for the first time, this state is collected after the agent takes his action and all the towers and enemies take their actions
+                self.rl_agent.remember(self.previous_state,self.current_action,self.current_reward,self.state,G.Player_HP>0)
+
             if (G.Player_HP > 0):
                 self.Rounds()
                 print("map at the end of round: ", G.num_of_rounds)
@@ -338,26 +344,19 @@ class Game:
                 action_tuple = self.rl_agent.act(current_state)
                 action, tower_type, location = action_tuple
                 print("ACTION:",action,tower_type,"location" ,location)
-                #print("action: ", action_tuple)
 
                 reward = self.execute_action(action, tower_type, location) #doing the agent's action and giving a reward for the action
-                next_state = self.collect_state()
+
 
                 reward += self.calculate_reward(G.enemies_killed - initial_enemies_killed)  #Calculating the reward based on the game state
 
                 reward += self.calculate_reward_according_to_rounds()
 
-                #
-                if (reward > self.rl_agent.biggest_reward):
-                    self.rl_agent.biggest_reward = reward
-                #
-
-                #Saving the experience to the agent's memory
-                self.rl_agent.remember(current_state, action_tuple, reward, next_state, False)
-                #print("reward:", reward)
-                #Updating the previous state and action
+                self.current_action = action_tuple
+                self.current_reward = reward
                 self.previous_state = current_state
-                self.previous_action = action_tuple
+
+
             self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
             print("end of round", G.num_of_rounds, "and ", G.List_Of_Towers)
         if (G.num_of_rounds % 40 == 0):
@@ -469,13 +468,9 @@ class Game:
         return reward
 
     def collect_state(self):
-        #Collect the current state for the RL agent
-        return [
-            G.Player_Money / 100.0,
-            G.Player_HP,
-            len(G.List_Of_Towers) / 10.0,
-            len(G.List_Of_Enemies) / 10.0
-        ]
+        state = [copy.deepcopy(self.Game_map.map_2d),copy.deepcopy(G.List_Of_Towers),copy.deepcopy(G.List_Of_Enemies),copy.copy(G.Player_HP),copy.copy(G.Player_Money)]
+        return state
+
 
 class All_Money_Algorithm(Tower_Algorithm):
     def __init__(self):
@@ -774,14 +769,13 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.999
         self.learning_rate = 0.0005
-        self.batch_size = 64
+        self.batch_size = 8
         self.model = self._build_model()
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
         self.best_performance = {
-            "max_cumulative_reward": float('-inf'),
+            "max_enemies_killed": 0,
             "max_rounds_survived": 0
         }
-        self.biggest_reward = 0
 
     def _build_model(self):
         total_tower_types = len(cl.List_Of_Towers_Options)
@@ -798,10 +792,14 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         return model
 
     def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+        encoded_state = self.encode_state(state)  # Encode current state
+        encoded_next_state = self.encode_state(next_state)  # Encode next state
+        self.memory.append((encoded_state, action, reward, encoded_next_state, done))  # Store experience
 
     def act(self, state):
-
+        encoded_state = self.encode_state(state)
+        print(encoded_state)
+        state_tensor = torch.FloatTensor(encoded_state).unsqueeze(0)
 
         if random.random() <= self.epsilon:
             # Exploration
@@ -815,12 +813,11 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
                 return (action, None, None)
         else:
             # Exploitation
-            state_tensor = torch.FloatTensor(state).unsqueeze(0)
             q_values = self.model(state_tensor)
-            max_q_index = torch.argmax(q_values[0]).item()
+            action_index = torch.argmax(q_values[0]).item()  #Get the action with the highest Q-value
+            action = self.decode_action(action_index)  #Decode the action back into a usable form
 
-            # Decode the index to get the action, tower type, and location
-            return self.decode_action(max_q_index)
+        return action
 
     def replay(self, batch_size):
         action_map = {
@@ -832,34 +829,45 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         if len(self.memory) < batch_size:
             return
         minibatch = random.sample(self.memory, batch_size)
+        print(minibatch)
         for state, (action, tower_type, location), reward, next_state, done in minibatch:
             action_index = self.encode_action(action, tower_type, location)
+
+            # Converting the encoded state and next state into tensors
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
             next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0)
 
+            q_values = self.model(state_tensor).clone().flatten()  # we clone the tensor in order to avoid problems
+
+            # target is the targeted reward, meaning the desired reward we want the network to predict
             target = reward
             if not done:
+                # If the episode isn't done, we add the discounted maximum Q-value for the next state to the reward
                 target = reward + self.gamma * torch.max(self.model(next_state_tensor)[0]).item()
 
-            target_f = self.model(state_tensor)
-            target_f = target_f.flatten()
-            target_f[action_index] = target
+            # target_f is the list of the predicted q-values for the current state
+            # target_f[action_index] gets replaced with the target value for the specific action
+            target_f = q_values.clone()  # Clone the predicted Q-values to create target_f
+            target_f[action_index] = target  # Replace the Q-value for the taken action
 
+            # We zero the gradients to clear any accumulated gradients from previous steps
             self.optimizer.zero_grad()
-            loss = F.mse_loss(target_f, self.model(state_tensor).flatten())
+            # The loss is the mean squared error between predicted q-values and the target q-values
+            loss = F.mse_loss(q_values, target_f)
             print("loss is: ", loss)
+            # We perform backpropagation to compute the gradients
             loss.backward()
+            # We Apply the gradients to update the weights
             self.optimizer.step()
 
-
-        #Decay epsilon after each replay to reduce exploration over time
+        # We decay the epsilon after each replay to reduce exploration over time
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
 
 
-    def update_performance(self, cumulative_reward, rounds_survived):
-        if cumulative_reward > self.best_performance["max_cumulative_reward"]:
-            self.best_performance["max_cumulative_reward"] = cumulative_reward
+    def update_performance(self, enemies_killed, rounds_survived):
+        if enemies_killed> self.best_performance["max_enemies_killed"]:
+            self.best_performance["enemies_killed"] = enemies_killed
         if rounds_survived > self.best_performance["max_rounds_survived"]:
             self.best_performance["max_rounds_survived"] = rounds_survived
 
@@ -931,122 +939,146 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         encoded_map = []
         encoded_towers = []
         encoded_enemies = []
-        encoded_state = []
         #every object in the state must be a numerical value, therefore, we encode all class object and other things into numerical values and later decode them
-        for row in range(len(game_map)):
-            for col in range(len(game_map[0])):
-                cell_content = game_map[row][col]
-                if isinstance(cell_content, Tower):
-                    #Encode the tower type as a number according to the price of the tower (1 = NormalTower, 2 = ShotgunTower...) and the tower's row and column.
-                    tower = cell_content
-                    tower_type = cl.List_Of_Towers_Options.index(type(tower))
-                    encoded_towers.append((tower_type,tower.row,tower.column))
 
-                elif isinstance(cell_content, Enemy):
-                    #Encode the enemy type as a number according to the price of the enemy (1 = NormalEnemy, 2 = FastEnemy...) and the enemy's row and column.
-                    enemy = cell_content
-                    enemy_type = cl.List_Of_Enemies_Options.index(type(enemy))
-                    encoded_enemies.append((enemy_type, enemy.row, enemy.column))
-                else:
-                    if cell_content == "empty":
-                        encoded_map.append(0)
-                    elif cell_content == "road":
-                        encoded_map.append(1)
-                    elif cell_content == "spawner":
-                        encoded_map.append(2)
-                    elif cell_content == "base":
-                        encoded_map.append(3)
 
-        #Encode everything
-        encoded_state.extend([encoded_map, encoded_towers, encoded_enemies, Player_HP, Player_Money])
+        # Encoding the map
+        encoded_map = [G.tile_to_value[tile] for row in game_map for tile in row if isinstance(tile,str)]
+        # We need to pad the map to ensure fixed size
+        expected_map_size = G.Rows*G.Columns
+        encoded_map += [0] * (expected_map_size - len(encoded_map))  # Pad with '0' (neutral value)
 
+        for tower in towers_list:
+            # Encode the tower type as a number according to the price of the tower (1 = NormalTower, 2 = ShotgunTower...) and the tower's row and column.
+            tower_type = cl.List_Of_Towers_Options.index(type(tower))
+            if tower.upgrade_2:
+                tower_level = 2
+            elif tower.upgrade_1:
+                tower_level = 1
+            else:
+                tower_level = 0
+            tower_attack_type = cl.towers_attack_types.index(tower.attack_type)
+            encoded_towers.append((tower_type + 1, tower.row + 1, tower.column + 1, tower_level + 1,
+                                   tower_attack_type + 1))  # we add 1 to all the enemy and tower values
+            # because in order to use padding in the neural network we cant represent the values like row and column with a 0 therefore in encoding and decoding the state the enemy and tower locations will be according to the row and column NUMBERS and not INDEX
+
+        for enemy in enemies_list:
+            # Encode the enemy type as a number according to the price of the enemy (1 = NormalEnemy, 2 = FastEnemy...) and the enemy's row and column.
+            enemy_type = cl.List_Of_Enemies_Options.index(type(enemy))
+            encoded_enemies.append((enemy_type + 1, enemy.row + 1, enemy.column + 1,
+                                    enemy.health))  # we add 1 to all the enemy and tower values
+            # because in order to use padding in the neural network we cant represent the values like row and column with a 0 therefore in encoding and decoding the state the enemy and tower locations will be according to the row and column NUMBERS and not INDEX
+
+        max_towers_size = sum([1 for row in game_map for tile in row if tile == "empty"]) + len(towers_list)
+        max_enemies_size = sum([1 for row in game_map for tile in row if tile == "road"]) + sum([1 for row in game_map for tile in row if tile == "spawner"]) + len(enemies_list)
+
+        encoded_towers, encoded_enemies = self.pad_encode_state(encoded_towers,encoded_enemies, max_towers_size,max_enemies_size) #Need to pad the non existent enemies and towers so the state size always remains the same
+
+        flattened_towers = [attribute for attributes in encoded_towers for attribute in attributes]
+        flattened_enemies = [attribute for attributes in encoded_enemies for attribute in attributes]
+
+        encoded_state = encoded_map + flattened_towers + flattened_enemies + [Player_HP] + [Player_Money] #turning the state into a 1D list
+        print("encoded state: " ,len(encoded_state))
+        print(len(encoded_map),len(flattened_towers),len(flattened_enemies),len([Player_HP]), len([Player_Money]))
         return encoded_state
 
+    def pad_encode_state(self, encoded_towers, encoded_enemies, max_towers, max_enemies):
+        # We need to fill in the state with empty towers and enemies in order to ensure the state size is always the same (meaning the state size is always the max size)
+        # Padding towers: each tower has 5 attributes (type, row, column, upgrade_level, attack_type)
+        padded_towers = encoded_towers + [(0, 0, 0, 0, 0)] * (max_towers - len(encoded_towers))
+        padded_towers = padded_towers[:max_towers]  # Ensure no overflow
+
+        # Padding enemies: each enemy has 4 attributes (type, row, column, health)
+        padded_enemies = encoded_enemies + [(0, 0, 0, 0)] * (max_enemies - len(encoded_enemies))
+        padded_enemies = padded_enemies[:max_enemies]  # Ensure no overflow
+
+        return padded_towers, padded_enemies
+
     def decode_state(self, state):
+        encoded_map = state[0]
+        encoded_towers = state[1]
+        encoded_enemies = state[2]
 
+        decoded_map = [["" for column in range(G.Columns)] for row in range(G.Rows)]
+        decoded_towers = []
+        decoded_enemies = []
+        for encoded_tower in encoded_towers:
+            if (encoded_tower[0] != 0): #if the tower is real and not padding
+                tower_row = encoded_tower[1]-1
+                tower_column = encoded_tower[2]-1
+                tower_level = encoded_tower[3]-1
+                tower_attack_type = encoded_tower[4]-1
 
+                #we lower the row and column and type values of the towers and enemies by 1because of the previous explanation in the encode_State function
+                tower = cl.List_Of_Towers_Options[encoded_tower[0]-1](tower_row,tower_column)
+                tower.attack_type = cl.towers_attack_types[tower_attack_type]
 
+                temp_Player_Money = G.Player_Money #the upgrade tower function reduces the G.Player_money so we temporarly save it and load it later on
 
-class TowerDefenseEnvironment:#Environment simulation for the tower defense game
-    def __init__(self, game_map : Game_Map):
-        self.state = self.reset()
-        self.game_map = game_map
+                if tower_level == 1:
+                    tower.Upgrade_Tower()
+                elif tower_level == 2:
+                    tower.Upgrade_Tower()
+                    tower.Upgrade_Tower()
 
-    def reset(self):
-        #Reset the environment to its initial state (reseting the basic Game settings)
-        G.Player_HP = 1
-        G.num_of_rounds = 0
-        G.List_Of_Enemies = []
-        G.List_Of_Towers = []
-        G.Player_Money = 100
+                G.Player_Money = temp_Player_Money #we load the player money back
 
-        self.collect_state()
-        return self.state
-    def collect_state(self):
-        self.state = [ #Need to normalize everythng in the state (turn all the numbers into floats between 0 and 1) so we divide each variable correspondingly
-            G.Player_Money / 100.0,
-            G.Player_HP / 1.0,
-            len(G.List_Of_Towers) / 100.0,
-            len(G.List_Of_Enemies) / 100.0
-        ]
+                decoded_towers.append(tower)
+                decoded_map[tower.row][tower.column] = tower
+
+        for encoded_enemy in encoded_enemies:
+            if (encoded_enemy[0] != 0): #if the enemy is real and not padding
+                enemy_row = encoded_enemy[1]-1
+                enemy_column = encoded_enemy[2]-1
+                # we lower the row and column and type values of the towers and enemies by 1 because of the previous explanation in the encode_State function
+                enemy_health = encoded_enemy[3]
+                enemy = cl.List_Of_Enemies_Options[encoded_enemy[0]-1](enemy_row,enemy_column)
+                enemy.health = enemy_health
+
+                decoded_enemies.append(enemy)
+                decoded_map[enemy.row][enemy.column] = enemy
+
+        tile_index = 0
+        for row in range(len(decoded_map)):
+            for column in range(len(decoded_map[row])):
+                tile = decoded_map[row][column]
+                if tile == "":
+                    decoded_map[row][column] = encoded_map[tile_index]
+                    tile_index+=1
+
+        player_hp = state[3]
+        player_money = state[4]
+        decoded_state =[decoded_map,decoded_towers,decoded_enemies,player_hp,player_money]
+
+        return decoded_state
 
 
 
 def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the DQL agent
+    training_Game_map = Game_map
     for episode in range(episodes):
         print("episode: ", episode)
-        environment = TowerDefenseEnvironment(Game_map)
-        state = environment.reset()
-        cumulative_reward = 0
-        done = False
-
+        episode_game_map = copy.deepcopy(training_Game_map) #every episode will use the exact same game_map
         #Initializing the game with the RL agent
-        game = Game(environment.game_map, None, Enemy_Algorithm_function, use_rl_agent=True, rl_agent=agent)
-        game.previous_state = game.collect_state()  #Initializing the previous state
+        game = Game(episode_game_map, None, Enemy_Algorithm_function, use_rl_agent=True, rl_agent=agent)
 
-        while not done:
-            #Reseting all the variables and making a new Game_map and list of enemies each time
-            Reset_Game_Settings()
-            map_gen_attributes = next(map_settings_generator("simulations.json"))
-            list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
-            Game_map.Enemy_Order = next(enemy_options_generator("simulations.json"))
+        Reset_Game_Settings() #Reseting all the game variables
+        G.Rows = len(episode_game_map.map_2d)
+        G.Columns = len(episode_game_map.map_2d[0])
 
-            G.Rows = len(Game_map.map_2d)
-            G.Columns = len(Game_map.map_2d[0])
-            Game_map.map_2d = game_map
-            Game_map.list_of_spawner_rows = list_of_spawner_rows
-            Game_map.list_of_spawner_columns = list_of_spawner_columns
-            Game_map.num_spawners = num_spawners
-            Game_map.Spawner_Order = Spawner_Order
-            game.Game_map = Game_map
-            game.Run_Game()  #Run the game with the RL agent controlling the actions
-            performance = {"enemies killed: " : G.enemies_killed, "rounds_survived: " : G.num_of_rounds}
-            save_performance(performance, filename='rl_algorithm_results.json')
-            #After running the game, we calculate the performance and reward
-            reward = game.calculate_reward(game.previous_enemies_killed)
-            state = game.collect_state()
-            cumulative_reward += reward
+        game.Run_Game()  #Run the game with the RL agent controlling the actions
 
-            #Checking if the game is done
-            done = G.Player_HP <= 0
-
-            #If done, store the final experience
-            if done:
-                agent.remember(game.previous_state, game.previous_action, reward, state, done)
-
-            #Experience replay to train the agent
-            agent.replay(agent.batch_size)
+        #Experience replay to train the agent after every game
+        agent.replay(agent.batch_size)
 
         #Updating the best performance
-        agent.update_performance(cumulative_reward, G.num_of_rounds)
+        agent.update_performance(G.enemies_killed, G.num_of_rounds)
 
-        if episode % 100 == 0:
-            print(f"Episode {episode} completed - Cumulative Reward: {cumulative_reward}")
-            print(agent.biggest_reward, agent.best_performance)
 
     save_model(agent)
-    save_performance(agent.best_performance)
+    save_performance(agent.best_performance,filename='rl_algorithm_results.json') #saving the best performances
     return agent
+
 def save_performance(best_performance, filename='rl_algorithm_results.json'):
     with open(filename, 'a') as f:
         json.dump(best_performance, f)
@@ -1054,13 +1086,13 @@ def save_performance(best_performance, filename='rl_algorithm_results.json'):
     print(f"Best performance saved to {filename}", "best performance: ", best_performance)
 
 #Saving the model
-def save_model(agent, filename='dqn_model.pth'):
+def save_model(agent, filename='dql_model.pth'):
     agent.save(filename)
     print(f"Model saved to {filename}")
 
 
 #Loading the model
-def load_model(agent, filename='dqn_model.pth'):
+def load_model(agent, filename='dql_model.pth'):
     agent.load(filename)
     print(f"Model loaded from {filename}")
 
@@ -1069,7 +1101,7 @@ def load_model(agent, filename='dqn_model.pth'):
 
 def Random_Enemy_Generator_Algorithm(game_map):
     Predetermined_List_Of_Enemies = [] #in order to truly check the effectiveness of each algorithm we must make sure that every time we run the algorithms we use the same map and enemies. Thats why at the start of every "simulation" we will make a predetermined random list of enemies
-    Enemy_Options = cl.List_Of_Enemies_Options
+    Enemy_Options = cl.List_Of_Enemies_Instances
     enemy_instance = Enemy_Options[random.randint(0, len(Enemy_Options) - 1)]
     enemy_instance: cl.Enemy
     for rounds in range(0,1000):
@@ -1084,7 +1116,7 @@ def Enemy_Algorithm_function(Game_map : Game_Map):
     enemy = 0
     if (G.num_of_rounds >= 10):
         while (normal_enemy_instance.price < G.Enemy_Money and Game_map.Num_Of_Spawners_Available() > 0):
-            Enemies = copy.deepcopy(cl.List_Of_Enemies_Options)
+            Enemies = copy.deepcopy(cl.List_Of_Enemies_Instances)
             if (i == len(Game_map.Enemy_Order)):
                 break
             enemy_name = Game_map.Enemy_Order[i]
@@ -1456,14 +1488,11 @@ def Run_Algorithms():
 def Run_RLA():
     for j in range(0, 5):
         for i in range(0, 20):
-            state_size = 4  # The size of each state
-            action_size = 3  # The number of actions the agent can take
-            game_number = i
+
 
             Game_map = Game_Map()
             Set_Game_Settings(50, 10)
             Reset_Game_Settings()
-
             map_gen_attributes = next(map_settings_generator("simulations.json"))
             list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
             Enemy_Options = next(enemy_options_generator("simulations.json"))
@@ -1477,11 +1506,22 @@ def Run_RLA():
             Game_map.list_of_spawner_columns = list_of_spawner_columns
             Game_map.num_spawners = num_spawners
             Game_map.Spawner_Order = Spawner_Order
-            # Loading the trained model for future use
-            loaded_agent = DQLAgent(state_size, action_size)
-            load_model(loaded_agent)
-            loaded_agent.epsilon = 0.1
-            trained_agent = train_agent(1000, Game_map, loaded_agent)
+
+
+
+            Max_map_size = G.Rows*G.Columns # The Max size of each state
+            Max_Towers = Game_map.Check_num_of_Tiles("empty") # The maximum amount of towers that can be placed is the number of empty tiles in the map
+            Max_Enemies = Game_map.Check_num_of_Tiles("road")+Game_map.Check_num_of_Tiles("spawner") #The maximum amount of towers that can be on the map at any moment is the number of roads and spawners
+
+            Towers_state_attributes = 5 #the number of attributes of the tower we represent in the state (type, row, column, level/how many upgrades and attack type)
+            Enemies_state_attributes = 4 #the number of attributes of the enemy we represent in the state (type, row, column, health)
+            action_size = 3  # The number of actions the agent can take
+
+            state_size = Max_map_size + (Max_Towers*Towers_state_attributes) + (Max_Enemies*Enemies_state_attributes) + len([G.Player_HP,G.Player_Money]) #the maximum size of the state
+            print("max state size: ", state_size)
+            agent = DQLAgent(state_size, action_size)
+
+            trained_agent = train_agent(1000, Game_map, agent)
 
             # Saving the trained model
             save_model(trained_agent)
