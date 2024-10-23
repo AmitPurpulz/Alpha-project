@@ -13,4 +13,4 @@ Perm_Player_HP = 10
 Perm_Player_Money = 10
 Perm_Enemy_Money = 10
 
-tile_to_value = {"empty":0, "road":1, "spawner":2, "base":3}
+tile_to_value = {"empty":1, "road":2, "spawner":3, "base":5}
