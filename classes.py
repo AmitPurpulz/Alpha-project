@@ -1,7 +1,4 @@
-import copy
 import random
-import sys
-import time
 import Game_Settings as G
 class Enemy:
     def __init__(self, name, health, speed, money_drop, base_damage, row, column,price):
@@ -119,10 +116,6 @@ class Tower:
         self.column = column
         self.upgrade_1_cost = self.price*0.5
         self.upgrade_2_cost = self.price*1.5
-    def Place_Tower(self, tower, row, column, game_map):
-        game_map[row][column] = tower
-        return game_map
-
     def Attack_Enemy(self, enemy: Enemy, game_map):
         enemy.health = enemy.health - self.damage
         if enemy.health <= 0:
