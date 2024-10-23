@@ -200,7 +200,7 @@ towers = {
     'sniper_tower': SniperTower(0, 0),
     'minigun_tower': MinigunTower(0, 0),
 }
-
+towers_attack_types = ["first","last","strongest","weakest"]
 class NormalEnemy(Enemy):
     def __init__(self, row, column):
         super().__init__("normal_enemy", 5, 1, 1, 1, row, column, price=5)
