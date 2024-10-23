@@ -218,7 +218,8 @@ class BossEnemy(Enemy):
         super().__init__("boss_enemy", 50, 2, 10, 5, row, column, price=50)
 
 
-List_Of_Enemies_Options = [NormalEnemy(0,0), FastEnemy(0,0), StrongEnemy(0,0), BossEnemy(0,0)]
+List_Of_Enemies_Instances = [NormalEnemy(0,0), FastEnemy(0,0), StrongEnemy(0,0), BossEnemy(0,0)]
+List_Of_Enemies_Options = [NormalEnemy, FastEnemy, StrongEnemy, BossEnemy]
 List_Of_Towers_Options = [NormalTower, ShotgunTower, MachinegunTower, SniperTower, MinigunTower]
 
 if __name__ == "main":
