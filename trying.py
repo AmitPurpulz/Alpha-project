@@ -1,7 +1,6 @@
 import copy
 import math
 import random
-import matplotlib.pyplot as plt
 import sys
 import Game_Settings as G
 import classes as cl
@@ -12,9 +11,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import time
-from collections import deque
+import collections
 import pygame
-
 
 class Game_Map:
     def __init__(self):
@@ -68,7 +66,6 @@ class Game_Map:
     def Create_Path(self, spawner_row, spawner_column, end_block_row, end_block_column):
         road_row = spawner_row
         vertical_distance_from_base = end_block_row - spawner_row
-        horizontal_distance = end_block_column - spawner_column
         change_direction_counter = 0
         square = spawner_column + 1
         while (road_row != end_block_row or square - change_direction_counter != end_block_column):
@@ -96,20 +93,6 @@ class Game_Map:
     def is_within_bounds(self, row, column):
         return 0 <= row < len(self.map_2d) and 0 <= column < len(self.map_2d[0])
 
-    def count_adjacent_roads(self, row, column):
-        adjacent_positions = [
-            (row + 1, column),
-            (row - 1, column),
-            (row, column + 1),
-            (row, column - 1)
-        ]
-
-        num_of_adjacent_roads = 0
-        for r, c in adjacent_positions:
-            if self.is_within_bounds(r, c) and self.map_2d[r][c] in ["road", "base", "spawner"]:
-                num_of_adjacent_roads += 1
-
-        return num_of_adjacent_roads
 
     def Num_Of_Spawners_Available(self):
         num_of_spawner_tiles = 0
@@ -119,7 +102,7 @@ class Game_Map:
                     num_of_spawner_tiles += 1
         return num_of_spawner_tiles
 
-    def Surrounding_tiles(self, tower: Tower, tower_row, tower_column):
+    def count_surrounding_tiles(self, tower: Tower, tower_row, tower_column):
         num_of_tiles = 0
         for row in range(max(0, tower_row - tower.attack_range), min(G.Rows, tower_row + tower.attack_range + 1)):
             for column in range(max(0, tower_column - tower.attack_range), min(G.Columns, tower_column + tower.attack_range + 1)):
@@ -127,13 +110,13 @@ class Game_Map:
                     num_of_tiles += 1
         return num_of_tiles
 
-    def Check_Empty_Tiles(self):
-        num_of_empty_tiles = 0
+    def Check_num_of_Tiles(self,tile_type):
+        num_of_tiles = 0
         for row in self.map_2d:
             for tile in row:
-                if tile == "empty":
-                    num_of_empty_tiles += 1
-        return num_of_empty_tiles
+                if tile == tile_type:
+                    num_of_tiles += 1
+        return num_of_tiles
 
     def Check_Adjecent_To_Spawner(self, row, column):
         for spawner in range(0,self.num_spawners):
@@ -143,10 +126,10 @@ class Game_Map:
                         return True
 
     def Check_Adjecent_To_Base(self, row, column):
-            for r in range(G.Rows//2 -1, G.Rows // 2 + 2):
-                for c in range(G.Columns-2, G.Columns):
-                    if (r == row and c == column):
-                        return True
+        for r in range(G.Rows//2 -1, G.Rows // 2 + 2):
+            for c in range(G.Columns-2, G.Columns):
+                if (r == row and c == column):
+                    return True
 
     def Create_Spawner_Order(self):
         List_Of_Spawn_Order = []
@@ -165,11 +148,13 @@ class Tower_Algorithm:
         self.Name = Name
 
 
-    def Location(self, game_map : Game_Map, tower : cl.Tower):
+    def choose_tower_location(self, game_map : Game_Map, tower : cl.Tower):
         temp_map = copy.deepcopy(game_map.map_2d)
         if (self.Location_Strategy == "Spread"):
             for tower in G.List_Of_Towers:
-                temp_map = self.Blocks_In_Range(temp_map,tower)
+                temp_map = self.check_blocks_in_range(temp_map,tower)
+            if not ("spawner" in temp_map or "road" in temp_map):
+                temp_map = game_map.map_2d
         best_location_row = 0
         best_location_column = 0
         num_of_tiles = 0
@@ -185,16 +170,14 @@ class Tower_Algorithm:
                     elif (self.Location_Strategy == "Spawner"):
                         if (game_map.Check_Adjecent_To_Spawner(row, column)):
                             return row, column
-                    elif (self.Location_Strategy == "Tiles"):
-                        num_of_tiles = game_map.Surrounding_tiles(tower, row, column)
+                    else: #if self.Location_Strategy == "Tiles" or "Spread":
+                        num_of_tiles = game_map.count_surrounding_tiles(tower, row, column)
                         if num_of_tiles > biggest_num_of_tiles:
                             biggest_num_of_tiles = num_of_tiles
                             best_location_row = row
                             best_location_column = column
 
         if (best_location_row == 0 and best_location_column == 0 and game_map.map_2d[best_location_row][best_location_column] != "empty"):
-            if (len(list_of_empty_tiles) == 0):
-                print("fasfsdfsdd")
             row, column = list_of_empty_tiles[random.randint(0, len(list_of_empty_tiles) - 1)]
             return row, column
         return best_location_row, best_location_column
@@ -204,7 +187,7 @@ class Tower_Algorithm:
         for tower in self.Tower_Strategy:
             if tower.price < cheapest_tower.price:
                 cheapest_tower = tower
-        if (game_map.Check_Empty_Tiles() == 0): #if no space to place towers, then return the map and dont place a tower
+        if (game_map.Check_num_of_Tiles("empty") == 0): #if no space to place towers, then return the map and dont place a tower
             return game_map.map_2d
         if G.Player_Money < cheapest_tower.price: #if Player money is smaller than the price of the cheapest tower, then return the map and dont place a tower
             return game_map.map_2d
@@ -217,7 +200,7 @@ class Tower_Algorithm:
         tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
         while (G.Player_Money < tower.price or G.Player_Money-tower.price < Min_Money):
             tower = Tower_Options[random.randint(0, len(Tower_Options) - 1)]
-        row, column = self.Location(game_map, tower)
+        row, column = self.choose_tower_location(game_map, tower)
         tower.row = row
         tower.column = column
         if (len(self.Tower_Attack_Strategy) > 0):
@@ -240,7 +223,7 @@ class Tower_Algorithm:
                 cheapest_tower_price = tower.price
                 cheapest_tower = tower
         Min_Money = total_money * (1-self.Money_Strategy)#the minimum amount of money that must be left at the end of the turn (according to the Money_strategy)
-        while G.Player_Money > Min_Money and G.Player_Money >= cheapest_tower_price and  game_map.Check_Empty_Tiles() > 0:
+        while G.Player_Money > Min_Money and G.Player_Money >= cheapest_tower_price and  game_map.Check_num_of_Tiles("empty") > 0:
             Upgrades_Available = False
             if (G.Player_Money- cheapest_tower_price < Min_Money and G.Player_Money - cheapest_tower.upgrade_1_cost < Min_Money): #if the player doesnt have enough money to spend even on the cheapest things then end the function and return the game_map
                 return game_map
@@ -291,9 +274,8 @@ class Tower_Algorithm:
                 else:
                     game_map.map_2d = self.Place_Tower(game_map, Min_Money)
 
-        return game_map
 
-    def Blocks_In_Range(self,temp_map,tower):  # this is used to mark blocks in the map as blocks who are in range of the current towers
+    def check_blocks_in_range(self,temp_map,tower):  # this is used to mark blocks in the map as blocks who are in range of the current towers
         for row in range(max(tower.row - tower.attack_range, 0), min(tower.row + tower.attack_range + 1, G.Rows)):
             for column in range(max(tower.column - tower.attack_range, 0),
                                 min(tower.column + tower.attack_range + 1, G.Columns)):
@@ -309,22 +291,18 @@ class Game:
         self.Enemy_Algorithm = Enemy_Algorithm
         self.use_rl_agent = use_rl_agent  #A Flag to determine if RL agent is used
         self.rl_agent = rl_agent  #The RL agent, if used
-        self.rl_agent : DQNAgent
+        self.rl_agent : DQLAgent
         self.previous_state = None  #To store the previous state
         self.previous_action = None  #To store the previous action
         self.previous_enemies_killed = 0  #To track the number of enemies killed
     def Run_Game(self):
         global game_number
-        '''
-        screen, Cell_size = Pygame_animation(self.Game_map.map_2d)
-        '''
+
+        #screen, Cell_size = Pygame_animation(self.Game_map.map_2d)
         while True:
-            '''
-            draw_grid(self.Game_map.map_2d, screen, Cell_size)
-            Run_Animation(screen, self.Game_map.map_2d)
-            '''
-            num_of_enemies = len(G.List_Of_Enemies)
-            temp_num_of_enemies = len(G.List_Of_Enemies)
+
+            #draw_grid(self.Game_map.map_2d, screen, Cell_size)
+            #Run_Animation(screen, self.Game_map.map_2d)
             Remake_Enemy_list(self.Game_map)
             for Tower in range(0, len(G.List_Of_Towers)):
                 self.Game_map.map_2d = G.List_Of_Towers[Tower].Check_Attack(self.Game_map.map_2d)
@@ -340,6 +318,9 @@ class Game:
                     num_of_enemies = len(G.List_Of_Enemies)
             if (G.Player_HP > 0):
                 self.Rounds()
+                print("map at the end of round: ", G.num_of_rounds)
+                for row in self.Game_map.map_2d:
+                    print(row,"/n")
             else:
                 '''
                 print("enemies killed", G.enemies_killed, "rounds survived:", G.num_of_rounds)
@@ -351,16 +332,19 @@ class Game:
         initial_enemies_killed = G.enemies_killed
 
         if G.num_of_rounds % 4 == 0:
+            print("start of round", G.num_of_rounds, "and ", G.List_Of_Towers)
             if self.use_rl_agent and self.rl_agent:
                 current_state = self.collect_state()
                 action_tuple = self.rl_agent.act(current_state)
                 action, tower_type, location = action_tuple
+                print("ACTION:",action,tower_type,"location" ,location)
                 #print("action: ", action_tuple)
 
                 reward = self.execute_action(action, tower_type, location) #doing the agent's action and giving a reward for the action
                 next_state = self.collect_state()
 
                 reward += self.calculate_reward(G.enemies_killed - initial_enemies_killed)  #Calculating the reward based on the game state
+
                 reward += self.calculate_reward_according_to_rounds()
 
                 #
@@ -375,10 +359,11 @@ class Game:
                 self.previous_state = current_state
                 self.previous_action = action_tuple
             self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
+            print("end of round", G.num_of_rounds, "and ", G.List_Of_Towers)
         if (G.num_of_rounds % 40 == 0):
             if not self.use_rl_agent:
                 #Using the regular tower_algorithm
-                self.Game_map = self.Tower_Algorithm.Do_Turn(self.Game_map)
+                self.Tower_Algorithm.Do_Turn(self.Game_map)
             G.Enemy_Money = G.Enemy_Money + 20 * float(G.num_of_rounds / 100)
             G.Player_Money = G.Player_Money + 20 * float(G.num_of_rounds / 100)
         G.num_of_rounds = G.num_of_rounds + 1
@@ -412,6 +397,7 @@ class Game:
             if (tower_type is not None and location is not None):
                 tower = tower_type(0,0)
                 tower.row, tower.column = location
+                print(tower, tower.row, tower.column)
             else:
                 tower = random.choice(cl.List_Of_Towers_Options)(0, 0)  # Choose a random tower
                 row = random.randint(0, G.Rows - 1)
@@ -453,12 +439,12 @@ class Game:
         enemies_killed_this_round = G.enemies_killed - initial_enemies_killed
         reward = enemies_killed_this_round * 5  # Reward is based on enemies killed during this round
         if G.Player_HP > 0:
-            reward += G.Player_HP * 5  #Bonus reward for keeping the player alive
+            reward += G.Player_HP #Bonus reward for keeping the player alive
 
         return reward
 
     def calculate_reward_based_on_tower_location(self, tower : cl.Tower): #this function rewards the agent for each tile that the tower he places can reach and a big punishment for placing the tower in a place with no tiles that are in it's attack_range
-        tiles_in_tower_range = self.Game_map.Surrounding_tiles(tower,tower.row,tower.column)
+        tiles_in_tower_range = self.Game_map.count_surrounding_tiles(tower,tower.row,tower.column)
         reward = 0
         if (tiles_in_tower_range == 0):
             reward = -15
@@ -517,9 +503,9 @@ class Local_Search_Algorithm:
         Reset_Game_Settings()
         game_map = copy.deepcopy(self.game_map_template)
         game_map.Enemy_Order = copy.copy(game_map.Enemy_Order_Copy)
-        actual_game = Game(game_map, algorithm, self.enemy_algorithm)
+        game = Game(game_map, algorithm, self.enemy_algorithm)
         start_time = time.time()
-        actual_game.Run_Game()
+        game.Run_Game()
         end_time = time.time()
         game_duration = end_time - start_time
 
@@ -779,11 +765,10 @@ class Simulated_Annealing_Algorithm:
         return self.best_algorithm, best_performance
 
 
-class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
+class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
     def __init__(self, state_size, action_size):
+        self.memory = collections.deque(maxlen=50000)  #Limit the memory size to 50000
         self.state_size = state_size
-        self.action_size = action_size
-        self.memory = deque(maxlen=50000)  #Limit the memory size to 2000
         self.gamma = 0.95    #Discount rate
         self.epsilon = 1.0   #Exploration rate
         self.epsilon_min = 0.01
@@ -816,6 +801,8 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
         self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state):
+
+
         if random.random() <= self.epsilon:
             # Exploration
             action = random.choice(["place_tower", "upgrade_tower", "skip_turn"])
@@ -860,6 +847,7 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
 
             self.optimizer.zero_grad()
             loss = F.mse_loss(target_f, self.model(state_tensor).flatten())
+            print("loss is: ", loss)
             loss.backward()
             self.optimizer.step()
 
@@ -906,9 +894,9 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
 
         return index
 
+
     def decode_action(self, index):
         action_dict = {0: "place_tower", 1: "upgrade_tower", 2: "skip_turn"}
-
         total_tower_types = len(cl.List_Of_Towers_Options)
         map_size = G.Rows * G.Columns
 
@@ -920,7 +908,7 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
 
         if action == "place_tower":
             #Decoding tower type and location
-            tower_type_index = int(index / map_size) #normal tower for indexes 0-99, shotgun tower for indexes 100-199 ect...
+            tower_type_index = int(index / map_size) #normal tower for indexes 0-99, shotgun tower for indexes 100-199 ect... (if map is 10x10 size)
             location_index = index - (tower_type_index * map_size)
 
             #Converting location index back to (row, column)
@@ -928,16 +916,60 @@ class DQNAgent:#Deep Q-Network (DQN) Agent using PyTorch
             column = location_index % G.Columns
             location = (row, column)
             tower_type = cl.List_Of_Towers_Options[tower_type_index]
-
+            print("checking",action,tower_type,location)
             return (action, tower_type, location)
         else:
             return (action, None, None)  # "upgrade_tower" and "skip_turn" do not need tower type and location
+
+    def encode_state(self,state):
+        game_map = state[0] #the game map (the grid map itself not the object of the class Game_Map)
+        towers_list = state[1] #The List_Of_Towers
+        enemies_list = state[2] #The List_Of_Enemies
+        Player_HP = state[3] #The player's health
+        Player_Money = state[4] #The player's money
+
+        encoded_map = []
+        encoded_towers = []
+        encoded_enemies = []
+        encoded_state = []
+        #every object in the state must be a numerical value, therefore, we encode all class object and other things into numerical values and later decode them
+        for row in range(len(game_map)):
+            for col in range(len(game_map[0])):
+                cell_content = game_map[row][col]
+                if isinstance(cell_content, Tower):
+                    #Encode the tower type as a number according to the price of the tower (1 = NormalTower, 2 = ShotgunTower...) and the tower's row and column.
+                    tower = cell_content
+                    tower_type = cl.List_Of_Towers_Options.index(type(tower))
+                    encoded_towers.append((tower_type,tower.row,tower.column))
+
+                elif isinstance(cell_content, Enemy):
+                    #Encode the enemy type as a number according to the price of the enemy (1 = NormalEnemy, 2 = FastEnemy...) and the enemy's row and column.
+                    enemy = cell_content
+                    enemy_type = cl.List_Of_Enemies_Options.index(type(enemy))
+                    encoded_enemies.append((enemy_type, enemy.row, enemy.column))
+                else:
+                    if cell_content == "empty":
+                        encoded_map.append(0)
+                    elif cell_content == "road":
+                        encoded_map.append(1)
+                    elif cell_content == "spawner":
+                        encoded_map.append(2)
+                    elif cell_content == "base":
+                        encoded_map.append(3)
+
+        #Encode everything
+        encoded_state.extend([encoded_map, encoded_towers, encoded_enemies, Player_HP, Player_Money])
+
+        return encoded_state
+
+    def decode_state(self, state):
+
+
 
 
 class TowerDefenseEnvironment:#Environment simulation for the tower defense game
     def __init__(self, game_map : Game_Map):
         self.state = self.reset()
-        self.max_rounds = G.num_of_rounds  # Use the actual round counter from the game
         self.game_map = game_map
 
     def reset(self):
@@ -960,8 +992,7 @@ class TowerDefenseEnvironment:#Environment simulation for the tower defense game
 
 
 
-def train_agent(episodes, state_size, action_size, Game_map : Game_Map, agent : DQNAgent, simulation_number):#Training the DQN agent
-
+def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the DQL agent
     for episode in range(episodes):
         print("episode: ", episode)
         environment = TowerDefenseEnvironment(Game_map)
@@ -970,19 +1001,19 @@ def train_agent(episodes, state_size, action_size, Game_map : Game_Map, agent : 
         done = False
 
         #Initializing the game with the RL agent
-        game = Game(environment.game_map, None, Random_Enemy_Algorithm, use_rl_agent=True, rl_agent=agent)
+        game = Game(environment.game_map, None, Enemy_Algorithm_function, use_rl_agent=True, rl_agent=agent)
         game.previous_state = game.collect_state()  #Initializing the previous state
 
         while not done:
             #Reseting all the variables and making a new Game_map and list of enemies each time
             Reset_Game_Settings()
             map_gen_attributes = next(map_settings_generator("simulations.json"))
-            Game_map.map_2d = game_map
             list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
-            Game_map.map_2d = next(enemy_options_generator("simulations.json"))
+            Game_map.Enemy_Order = next(enemy_options_generator("simulations.json"))
 
             G.Rows = len(Game_map.map_2d)
             G.Columns = len(Game_map.map_2d[0])
+            Game_map.map_2d = game_map
             Game_map.list_of_spawner_rows = list_of_spawner_rows
             Game_map.list_of_spawner_columns = list_of_spawner_columns
             Game_map.num_spawners = num_spawners
@@ -1047,7 +1078,7 @@ def Random_Enemy_Generator_Algorithm(game_map):
         Predetermined_List_Of_Enemies.append(enemy_name)
     return Predetermined_List_Of_Enemies
 
-def Random_Enemy_Algorithm(Game_map : Game_Map):
+def Enemy_Algorithm_function(Game_map : Game_Map):
     normal_enemy_instance = NormalEnemy(0, 0)
     i = 0
     enemy = 0
@@ -1216,7 +1247,7 @@ def draw_grid(game_map, screen, CELL_SIZE):
 
             pygame.draw.rect(screen, (0, 0, 0), rect, 1)
 
-def Pygame_animation(game_map):
+def Pygame_animation():
     pygame.init()
 
     #Visual Constants
@@ -1225,10 +1256,7 @@ def Pygame_animation(game_map):
 
     #Setting up the display
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Matrix Animation")
-
-    #Initializing the grid
-    grid = [[0 for _ in range(G.Columns)] for _ in range(G.Rows)]
+    pygame.display.set_caption("Game animation")
 
     return screen, CELL_SIZE
 
@@ -1255,7 +1283,7 @@ def Run_Basic_Strategies(algorithms): #to run the most basic strategy in case ne
         simulations = json.load(f)
     for algorithm in algorithms:
         Game_map = Game_Map()
-        Actual_Game = Game(Game_map, algorithm, Random_Enemy_Algorithm)
+        Actual_Game = Game(Game_map, algorithm, Enemy_Algorithm_function)
         game_number = 0 #an index used to choose which simulation from the list of simulations
         for game in range(0, 100):
             total_enemies_killed = 0
@@ -1315,7 +1343,7 @@ def Run_Basic_Strategies(algorithms): #to run the most basic strategy in case ne
 def Run_Algorithms():
     for money_category in range(0, 2):
         for health_category in range(0, 3):
-            Set_Game_Settings(10 ** (money_category + 1),
+            Set_Game_Settings(10 * 2 ** (money_category + 1),
                               10 ** health_category)  # this way we can run all the different maps on 6 different game modes
             for game_number in range(0, 20):
                 if (game_number == 0):
@@ -1345,15 +1373,15 @@ def Run_Algorithms():
                     generations=10,
                     mutation_rate=0.1,
                     game_map=Game_map,
-                    enemy_algorithm=Random_Enemy_Algorithm
+                    enemy_algorithm=Enemy_Algorithm_function
                 )
 
                 best_algorithm, best_stats = ga.run()
                 print("Best algorithm found:", best_algorithm.__dict__)
                 print("Best stats:", best_stats)
                 with open("genetic_algorithm_results.json", saving_style) as f:
-                    json.dump({"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_stats},
-                              f)
+                    json.dump({"best_algorithm": serialize_algorithm(best_algorithm),
+                    "best_performance": best_stats}, f)
                     f.write("\n")
 
                 Game_map = Game_Map()
@@ -1375,7 +1403,7 @@ def Run_Algorithms():
 
                 simulated_annealing = Simulated_Annealing_Algorithm(
                     game_map_template=Game_map,
-                    enemy_algorithm=Random_Enemy_Algorithm,
+                    enemy_algorithm=Enemy_Algorithm_function,
                     initial_algorithm=All_Money_Algorithm_instance,
                     # this doesnt matter which algorithm we use for the start i just used this one because its the basic one
                     initial_temperature=100.0,
@@ -1412,7 +1440,7 @@ def Run_Algorithms():
 
                 local_search = Local_Search_Algorithm(
                     game_map_template=Game_map,
-                    enemy_algorithm=Random_Enemy_Algorithm,
+                    enemy_algorithm=Enemy_Algorithm_function,
                     iterations=100  # Need to change this number
                 )
 
@@ -1450,10 +1478,10 @@ def Run_RLA():
             Game_map.num_spawners = num_spawners
             Game_map.Spawner_Order = Spawner_Order
             # Loading the trained model for future use
-            loaded_agent = DQNAgent(state_size, action_size)
+            loaded_agent = DQLAgent(state_size, action_size)
             load_model(loaded_agent)
             loaded_agent.epsilon = 0.1
-            trained_agent = train_agent(1000, state_size, action_size, Game_map, loaded_agent, game_number)
+            trained_agent = train_agent(1000, Game_map, loaded_agent)
 
             # Saving the trained model
             save_model(trained_agent)
