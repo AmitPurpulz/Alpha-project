@@ -171,6 +171,15 @@ class Tower:
             self.damage = (self.damage/1.5)*2
             G.Player_Money -= self.upgrade_2_cost
 
+    def Check_Surrounding_Enemies(self, game_map):
+        num_of_enemies = 0
+        for column in range(max(self.column - self.attack_range, 0),
+                            min(self.column + self.attack_range, G.Columns - 1)):
+            for row in range(max(self.row - self.attack_range, 0), min(self.row + self.attack_range, G.Rows - 1)):
+                if isinstance(game_map[row][column], Enemy):
+                    num_of_enemies +=1
+        return num_of_enemies
+
 class NormalTower(Tower):
     def __init__(self, row, column):
         super().__init__(name="normal_tower",damage=3, firerate=1, attack_range=2, attack_type="first" ,price=10, row=row, column=column)
