@@ -115,7 +115,7 @@ class Tower:
         self.row = row
         self.column = column
         self.upgrade_1_cost = self.price*0.5
-        self.upgrade_2_cost = self.price*1.5
+        self.upgrade_2_cost = self.price
     def Attack_Enemy(self, enemy: Enemy, game_map):
         enemy.health = enemy.health - self.damage
         if enemy.health <= 0:
@@ -224,7 +224,7 @@ class StrongEnemy(Enemy):
 
 class BossEnemy(Enemy):
     def __init__(self, row, column):
-        super().__init__("boss_enemy", 50, 2, 10, 5, row, column, price=50)
+        super().__init__("boss_enemy", 50, 2, 10, 10, row, column, price=50)
 
 
 List_Of_Enemies_Instances = [NormalEnemy(0,0), FastEnemy(0,0), StrongEnemy(0,0), BossEnemy(0,0)]
