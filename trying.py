@@ -116,6 +116,9 @@ class Game_Map:
             for tile in row:
                 if tile == tile_type:
                     num_of_tiles += 1
+                if (tile_type == cl.Enemy or tile_type == cl.Tower):
+                    if isinstance(tile, tile_type):
+                        num_of_tiles += 1
         return num_of_tiles
 
     def Check_Adjecent_To_Spawner(self, row, column):
@@ -324,9 +327,6 @@ class Game:
 
             if (G.Player_HP > 0):
                 self.Rounds()
-                print("map at the end of round: ", G.num_of_rounds)
-                for row in self.Game_map.map_2d:
-                    print(row,"/n")
             else:
                 '''
                 print("enemies killed", G.enemies_killed, "rounds survived:", G.num_of_rounds)
@@ -338,17 +338,12 @@ class Game:
         initial_enemies_killed = G.enemies_killed
 
         if G.num_of_rounds % 4 == 0:
-            print("start of round", G.num_of_rounds, "and ", G.List_Of_Towers)
             if self.use_rl_agent and self.rl_agent:
                 current_state = self.collect_state()
                 action_tuple = self.rl_agent.act(current_state)
                 action, tower_type, location = action_tuple
-                print("ACTION:",action,tower_type,"location" ,location)
 
                 reward = self.execute_action(action, tower_type, location) #doing the agent's action and giving a reward for the action
-
-
-                reward += self.calculate_reward(G.enemies_killed - initial_enemies_killed)  #Calculating the reward based on the game state
 
                 reward += self.calculate_reward_according_to_rounds()
 
@@ -358,7 +353,6 @@ class Game:
 
 
             self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
-            print("end of round", G.num_of_rounds, "and ", G.List_Of_Towers)
         if (G.num_of_rounds % 40 == 0):
             if not self.use_rl_agent:
                 #Using the regular tower_algorithm
@@ -396,44 +390,126 @@ class Game:
             if (tower_type is not None and location is not None):
                 tower = tower_type(0,0)
                 tower.row, tower.column = location
-                print(tower, tower.row, tower.column)
             else:
                 tower = random.choice(cl.List_Of_Towers_Options)(0, 0)  # Choose a random tower
                 row = random.randint(0, G.Rows - 1)
                 column = random.randint(0, G.Columns - 1)
                 tower.row,tower.column = row, column
             if G.Player_Money >= tower.price:  # Check if the player can afford the tower
-                if (self.Game_map.map_2d[tower.row][tower.column] != "empty"):
-                    reward -= 15 #if the agent places a tower in an invalid location get a big punishment
-                else:
+                if (self.Game_map.map_2d[tower.row][tower.column] == "empty"):
                     self.Game_map.map_2d[tower.row][tower.column] = tower
                     G.List_Of_Towers.append(tower)
                     G.Player_Money -= tower.price
-                    reward += 10 #if the agent places a tower in a valid location get a major reward
-                    reward += self.calculate_reward_based_on_tower_location(tower) #calulates an extra reward based on how good the location of the tower is (how many tiles is in the tower's attack range)
-            else:
-                reward -= 10 #if agent chooses a tower it doesnt have money for get a big punishment
+            reward += self.calculate_reward(action, tower, (tower.row, tower.column))
         elif action == 'upgrade_tower' or action == 1:
             if len(G.List_Of_Towers) > 0:
                 tower = random.choice(G.List_Of_Towers)  # Choose a random existing tower to upgrade
+                upgrade_cost = None
                 if tower.upgrade_2:
-                    reward -= 5 #if the agent chooses to upgrade a tower that has already been upgraded to the maximum get a big punishment
-                if tower.upgrade_1:
+                    upgrade_cost = None
+                elif tower.upgrade_1:
                     upgrade_cost = tower.upgrade_2_cost
                 else:
-                    upgade_cost = tower.upgrade_1_cost
-                if G.Player_Money >= tower.upgrade_2_cost:  # Check if the player can afford the upgrade
-                    tower.Upgrade_Tower()
-                    reward += 10 #if the agent upgrades a tower get a major reward
-                else:
-                    reward -= 5 #if the agent tries to upgrade a tower but it doesnt have enough money get a big punishment
-            else:
-                reward -= 5 #if the agent chooses to upgrade a tower but there are no towers available to upgrade get a big punishment
+                    upgrade_cost = tower.upgrade_1_cost
+                if upgrade_cost:
+                    if G.Player_Money >= upgrade_cost:  # Check if the player can afford the upgrade
+                        tower.Upgrade_Tower()
+            reward += self.calculate_reward(action)
         elif action == 'skip_turn' or action == 2:
+            reward += self.calculate_reward(action)
             pass
+
         return reward
 
-    def calculate_reward(self, initial_enemies_killed):
+    def calculate_reward(self, action, tower= None, tower_location=None):
+        # This function calculates the base reward for the action the agent took
+
+        action_dict = {0:"place_tower",1:"upgrade_tower",2:"skip_turn"}
+        reward = 0
+        if isinstance(action,int):
+            action = action_dict[action]
+        if action == "place_tower":
+            if G.Player_Money < tower.price:
+                reward -= 75  # Not enough money
+            elif self.Game_map.count_surrounding_tiles(tower,tower.row,tower.column) == 0:
+                reward -= 50  # No places where enemies can be, are in the tower's range
+            else:
+                # Reward for beneficial placements
+                reward += 5 * self.Game_map.count_surrounding_tiles(tower,tower.row,tower.column)
+                reward += 10 * tower.Check_Surrounding_Enemies(self.Game_map.map_2d)
+
+        elif action == "upgrade_tower":
+            # Non-existent or insufficient funds
+            if not tower:
+                reward -= 100  # Non-existent tower
+            elif tower.upgrade_2:
+                reward -= 50  # Tower level maxed out
+            elif tower.upgrade_1:
+                if G.Player_Money < tower.upgrade_2:
+                    reward -= 75  # Not enough money
+            elif not tower.upgrade_1:
+                if G.Player_Money < tower.upgrade_1:
+                    reward -= 75  # Not enough money
+            else:
+                # Reward for successful upgrade
+                reward += 25
+                # Reward for upgrading a tower in a benefiticial location
+                reward += 5 * self.Game_map.count_surrounding_tiles(tower, tower.row, tower.column)
+                reward += 10 * tower.Check_Surrounding_Enemies(self.Game_map.map_2d)
+
+        elif action == "skip_turn":
+            # Reward or punish based on money level
+            if len(G.List_Of_Towers) == 0:
+                if G.Player_Money > cl.SniperTower(0,0).price: #the most expensive thing in the game is upgrading a sniper tower to level 2 or buying a sniper tower.
+                    reward -= 50 # If the agent has enough money to do the most expensive action but chooses to not take any action then I give him a negative reward
+                else:
+                    for tower in cl.towers_list[:-1]:
+                        if G.Player_Money < tower.price:
+                            reward += 10
+            # Reward or punish based on health and risk level
+            reward += self.calculate_risk_level()
+        return reward
+
+    def calculate_risk_level(self):
+        risk_level = 0.0
+        max_possible_distance = (G.Rows / 2 + G.Columns - 1)
+
+        for enemy in G.List_Of_Enemies:
+            # Calculate the distance of the enemy from the base
+            enemy_distance_from_base = abs(G.Rows / 2 - enemy.row) + abs(G.Columns - enemy.column - 1)
+            distance_factor = max(0.1,
+                                  max_possible_distance / enemy_distance_from_base)
+
+
+            # Calculate each enemy's risk by combining different factors
+            enemy_risk = ((enemy.base_damage * enemy.health * distance_factor)) / G.Player_HP
+
+            # Add enemy risk to total risk level
+            risk_level += enemy_risk
+            print(enemy, f"damage : {enemy.base_damage}. health : {enemy.health}, distance : {distance_factor}. Player hp: {G.Player_HP}. risk : {enemy_risk}")
+        print(f"{G.List_Of_Enemies}: risk level ",risk_level)
+
+        # Cap risk level to avoid extremely large values
+        risk_level = min(risk_level, 500)
+
+        # Determine if the risk level should be a reward or punishment
+        if risk_level < 50:
+            # If there is a low risk - Small positive reward
+            reward = (50-risk_level)
+        elif risk_level < 200:
+            # If there is a moderate risk - Negative reward
+            reward = (50 - risk_level) / 2
+        else:
+            # If there is a high risk - big negative reward
+            reward = -risk_level / 2
+
+        if (G.List_Of_Enemies == 0):
+            reward = 50 # A reward for skipping the turn if no enemies on the map
+        print("the reward for skipping the turn is: ", reward)
+        return reward
+
+    def calculate_reward_based_on_enemies_killed(self, initial_enemies_killed):
+
         #Calculate how many enemies were killed during this round
         enemies_killed_this_round = G.enemies_killed - initial_enemies_killed
         reward = enemies_killed_this_round * 5  # Reward is based on enemies killed during this round
@@ -798,7 +874,6 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
 
     def act(self, state):
         encoded_state = self.encode_state(state)
-        print(encoded_state)
         state_tensor = torch.FloatTensor(encoded_state).unsqueeze(0)
 
         if random.random() <= self.epsilon:
@@ -829,7 +904,6 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         if len(self.memory) < batch_size:
             return
         minibatch = random.sample(self.memory, batch_size)
-        print(minibatch)
         for state, (action, tower_type, location), reward, next_state, done in minibatch:
             action_index = self.encode_action(action, tower_type, location)
 
@@ -924,7 +998,6 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
             column = location_index % G.Columns
             location = (row, column)
             tower_type = cl.List_Of_Towers_Options[tower_type_index]
-            print("checking",action,tower_type,location)
             return (action, tower_type, location)
         else:
             return (action, None, None)  # "upgrade_tower" and "skip_turn" do not need tower type and location
@@ -978,8 +1051,6 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         flattened_enemies = [attribute for attributes in encoded_enemies for attribute in attributes]
 
         encoded_state = encoded_map + flattened_towers + flattened_enemies + [Player_HP] + [Player_Money] #turning the state into a 1D list
-        print("encoded state: " ,len(encoded_state))
-        print(len(encoded_map),len(flattened_towers),len(flattened_enemies),len([Player_HP]), len([Player_Money]))
         return encoded_state
 
     def pad_encode_state(self, encoded_towers, encoded_enemies, max_towers, max_enemies):
@@ -1057,7 +1128,6 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
 def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the DQL agent
     training_Game_map = Game_map
     for episode in range(episodes):
-        print("episode: ", episode)
         episode_game_map = copy.deepcopy(training_Game_map) #every episode will use the exact same game_map
         #Initializing the game with the RL agent
         game = Game(episode_game_map, None, Enemy_Algorithm_function, use_rl_agent=True, rl_agent=agent)
@@ -1072,6 +1142,7 @@ def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the D
         agent.replay(agent.batch_size)
 
         #Updating the best performance
+        print(f"episode: {episode}, enemies killed: {G.enemies_killed}, num_of_rounds: {G.num_of_rounds}")
         agent.update_performance(G.enemies_killed, G.num_of_rounds)
 
 
@@ -1518,9 +1589,8 @@ def Run_RLA():
             action_size = 3  # The number of actions the agent can take
 
             state_size = Max_map_size + (Max_Towers*Towers_state_attributes) + (Max_Enemies*Enemies_state_attributes) + len([G.Player_HP,G.Player_Money]) #the maximum size of the state
-            print("max state size: ", state_size)
             agent = DQLAgent(state_size, action_size)
-
+            load_model(agent)
             trained_agent = train_agent(1000, Game_map, agent)
 
             # Saving the trained model
