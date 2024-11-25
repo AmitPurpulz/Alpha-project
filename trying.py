@@ -342,7 +342,7 @@ class Game:
                 current_state = self.collect_state()
                 action_tuple = self.rl_agent.act(current_state)
                 action, tower_type, location = action_tuple
-
+                prev_money = G.Player_Money
                 reward = self.execute_action(action, tower_type, location) #doing the agent's action and giving a reward for the action
 
                 reward += self.calculate_reward_according_to_rounds()
@@ -350,7 +350,7 @@ class Game:
                 self.current_action = action_tuple
                 self.current_reward = reward
                 self.previous_state = current_state
-
+                print("action: " ,{action_tuple}, " reward: ", {self.current_reward}, "prev_money: ", {prev_money}, "money: ",{G.Player_Money})
 
             self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
         if (G.num_of_rounds % 40 == 0):
@@ -399,8 +399,12 @@ class Game:
                 if (self.Game_map.map_2d[tower.row][tower.column] == "empty"):
                     self.Game_map.map_2d[tower.row][tower.column] = tower
                     G.List_Of_Towers.append(tower)
+                    reward += self.calculate_reward(action, tower, (tower.row, tower.column))
                     G.Player_Money -= tower.price
-            reward += self.calculate_reward(action, tower, (tower.row, tower.column))
+                else:
+                    reward += self.calculate_reward(action, tower, (tower.row, tower.column))
+            else:
+                reward += self.calculate_reward(action, tower, (tower.row, tower.column))
         elif action == 'upgrade_tower' or action == 1:
             if len(G.List_Of_Towers) > 0:
                 tower = random.choice(G.List_Of_Towers)  # Choose a random existing tower to upgrade
@@ -429,12 +433,17 @@ class Game:
         if isinstance(action,int):
             action = action_dict[action]
         if action == "place_tower":
-            if G.Player_Money < tower.price:
-                reward -= 75  # Not enough money
+            if (self.Game_map.map_2d[tower.row][tower.column] != tower):
+                reward -= 150
+            elif G.Player_Money < tower.price:
+                reward -= 100  # Not enough money
             elif self.Game_map.count_surrounding_tiles(tower,tower.row,tower.column) == 0:
-                reward -= 50  # No places where enemies can be, are in the tower's range
+                reward -= 100  # No places where enemies can be, are in the tower's range
             else:
                 # Reward for beneficial placements
+                if (len(G.List_Of_Towers) == 1):
+                    reward += 100  # A large reward for placing down the first tower
+                reward += 5* math.sqrt(self.Game_map.Check_num_of_Tiles("empty")-len(G.List_Of_Towers)) # Extra reward based on how many towers there already are
                 reward += 5 * self.Game_map.count_surrounding_tiles(tower,tower.row,tower.column)
                 reward += 10 * tower.Check_Surrounding_Enemies(self.Game_map.map_2d)
 
@@ -461,7 +470,7 @@ class Game:
             # Reward or punish based on money level
             if len(G.List_Of_Towers) == 0:
                 if G.Player_Money > cl.SniperTower(0,0).price: #the most expensive thing in the game is upgrading a sniper tower to level 2 or buying a sniper tower.
-                    reward -= 50 # If the agent has enough money to do the most expensive action but chooses to not take any action then I give him a negative reward
+                    reward -= 200 # If the agent has enough money to do the most expensive action but chooses to not take any action then I give him a negative reward
                 else:
                     for tower in cl.towers_list[:-1]:
                         if G.Player_Money < tower.price:
@@ -534,13 +543,13 @@ class Game:
     def calculate_reward_according_to_rounds(self):
         if G.num_of_rounds <= 100:
             # Gradual increase in the early rounds
-            reward = 1 + (G.num_of_rounds / 100) * 2
+            reward = 1 + (G.num_of_rounds / 100) * 5
         elif G.num_of_rounds <= 200:
             # More significant increase in the medium rounds
-            reward = 3 + ((G.num_of_rounds - 100) / 100) * 5
+            reward = 3 + ((G.num_of_rounds - 100) / 10) * 5
         else:
             # Slower increase in the later rounds
-            reward = 8 + (G.num_of_rounds - 200) / 200  #Reward grows slowly after 200 rounds
+            reward = 8 + ((G.num_of_rounds - 200) / 20) * 5  #Reward grows slowly after 200 rounds
         return reward
 
     def collect_state(self):
@@ -594,14 +603,7 @@ class Local_Search_Algorithm:
 
     def run(self):
         #Initialize with a predetermined algorithm i made
-        current_algorithm = Tower_Algorithm(
-            Location_Strategy="Tiles",
-            Money_Strategy=1.0,
-            Tower_Strategy=copy.deepcopy(cl.towers_list),
-            Upgrade_Strategy=0,
-            Tower_Attack_Strategy=["first", "last", "weakest", "strongest"],
-            Name="Local_Search_Algorithm"
-        )
+        current_algorithm = Create_Random_Tower_Algorithm("Local_Search_Algorithm")
 
         self.best_algorithm = copy.deepcopy(current_algorithm)
         self.best_performance = self.evaluate_algorithm(self.best_algorithm)
@@ -624,7 +626,7 @@ class Local_Search_Algorithm:
             print("current iteration: ", iteration, "performance:", new_performance)
             '''
             #Comparing the new performance with the best performance so far
-            if new_performance["enemies_killed"] > self.best_performance["enemies_killed"]:
+            if new_performance["rounds"] > self.best_performance["rounds"]:
                 self.best_algorithm = copy.deepcopy(new_algorithm)
                 self.best_performance = new_performance
                 current_algorithm = copy.deepcopy(new_algorithm)
@@ -650,14 +652,7 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
         # Initialize a population of random Tower_Algorithms
         population = []
         for i in range(self.population_size):
-            algorithm = Tower_Algorithm(
-                Location_Strategy=random.choice(["Spread", "Base", "Spawner", "Tiles"]),
-                Money_Strategy=round(random.uniform(0, 1), 2),
-                Tower_Strategy=random.sample(cl.towers_list, random.randint(1, len(cl.towers_list))),
-                Upgrade_Strategy=random.choice([0, 1, 2]),
-                Tower_Attack_Strategy=random.sample(["first", "last", "strongest", "weakest"], random.randint(1, 4)),
-                Name="GA_Algorithm"
-            )
+            algorithm = Create_Random_Tower_Algorithm("Genetic_Algorithm")
             population.append(algorithm)
         return population
 
@@ -694,7 +689,7 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
             '''
 
         #Sorting the algorithms by performance (by enemies_killed, rounds survived, etc.) so that we can choose the best ones out of them
-        performance_data.sort(key=lambda x: x["enemies_killed"], reverse=True)
+        performance_data.sort(key=lambda x: x["rounds"], reverse=True)
         return performance_data
 
     def select_best_algorithms(self, performance_data, top_n=2):
@@ -744,8 +739,8 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
             '''
             performance_data = self.evaluate_population()
             for item in performance_data:
-                if item["enemies_killed"] > self.Best_Performance:
-                    self.Best_Performance = item["enemies_killed"]
+                if item["rounds"] > self.Best_Performance:
+                    self.Best_Performance = item["rounds"]
             self.evolve_population(performance_data)
 
         #Returning the best algorithm from the final population
@@ -762,23 +757,28 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
 
 
 class Simulated_Annealing_Algorithm:
-    def __init__(self, game_map_template: Game_Map, enemy_algorithm, initial_algorithm: Tower_Algorithm,
+    def __init__(self, game_map_template: Game_Map, enemy_algorithm,
                  initial_temperature: float, cooling_rate: float, iterations: int):
         self.game_map_template = game_map_template
         self.enemy_algorithm = enemy_algorithm
-        self.current_algorithm = initial_algorithm
-        self.best_algorithm = copy.deepcopy(initial_algorithm)
+        self.current_algorithm = Create_Random_Tower_Algorithm("Simulated_Annealing_Algorithm")
+        self.current_performance = None
+        self.best_algorithm = self.current_algorithm
         self.current_temperature = initial_temperature
         self.cooling_rate = cooling_rate
         self.iterations = iterations
 
-    def acceptance_probability(self, current_score, new_score):
-        if new_score > current_score:
-            return 1.0
+    def acceptance_probability(self, current_performance, new_performance):
+        current_score = current_performance["rounds"]
+        new_score = new_performance["rounds"]
+        if new_score >= current_score:
+            if (new_performance["enemies_killed"] >= current_performance["enemies_killed"]):
+                return 1.0
+            else:
+                return math.exp((new_performance["enemies_killed"] - current_performance["enemies_killed"]) / self.current_temperature)
         return math.exp((new_score - current_score) / self.current_temperature)
 
     def evaluate_algorithm(self, algorithm: Tower_Algorithm):
-        global game_number
         Reset_Game_Settings()
         game_map = copy.deepcopy(self.game_map_template)
         game_map.Enemy_Order = copy.copy(game_map.Enemy_Order_Copy)
@@ -793,7 +793,7 @@ class Simulated_Annealing_Algorithm:
 
         performance_score = {
             "enemies_killed": enemies_killed,
-            "rounds_survived": rounds_survived,
+            "rounds": rounds_survived,
             "duration_seconds": game_duration
         }
         return performance_score
@@ -805,7 +805,8 @@ class Simulated_Annealing_Algorithm:
             new_algorithm = copy.deepcopy(self.current_algorithm)
             modify_random_attribute(new_algorithm)
 
-            current_performance = self.evaluate_algorithm(self.current_algorithm)
+            if not self.current_performance:
+                self.current_performance = self.evaluate_algorithm(self.current_algorithm)
 
             '''
             with open("simulated_annealing_algorithm_all_results.json", 'a') as f:
@@ -817,21 +818,25 @@ class Simulated_Annealing_Algorithm:
 
             new_performance = self.evaluate_algorithm(new_algorithm)
             '''
+            print(f"current: {current_performance}.  next: {new_performance}")
+            
             print("iteration: ", i, ", current performance: ", current_performance, " new performance:", new_performance)
             '''
-            current_score = new_performance["enemies_killed"]
-            best_score = best_performance["enemies_killed"]
-            new_score = current_performance["enemies_killed"]
+            current_score = self.current_performance["rounds"]
+            new_score = new_performance["rounds"]
 
-            if self.acceptance_probability(current_score, new_score) >= random.random():
+            acceptance_probability = self.acceptance_probability(self.current_performance, new_performance)
+            if acceptance_probability >= random.random():
+                print(f"iteration: {i}, probability: {acceptance_probability}. temperture {self.current_temperature}, new: {new_score}, current: {current_score}")
                 self.current_algorithm = new_algorithm
-                current_performance = new_performance
+                self.current_performance = new_performance
 
-                if new_score > best_score:
-                    self.best_algorithm = copy.deepcopy(new_algorithm)
-                    best_performance = new_performance
+                # If the new algorithm is accepted, save it as the best algorithm to later return it
+                self.best_algorithm = copy.deepcopy(new_algorithm)
+                best_performance = self.current_performance
 
             self.current_temperature *= self.cooling_rate
+            self.current_temperature = max(self.current_temperature,0.0001)  # Make sure the temperature is never 0
 
         return self.best_algorithm, best_performance
 
@@ -841,9 +846,9 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         self.memory = collections.deque(maxlen=50000)  #Limit the memory size to 50000
         self.state_size = state_size
         self.gamma = 0.95    #Discount rate
-        self.epsilon = 1.0   #Exploration rate
+        self.epsilon = 1   #Exploration rate
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.999
+        self.epsilon_decay = 0.99
         self.learning_rate = 0.0005
         self.batch_size = 8
         self.model = self._build_model()
@@ -928,7 +933,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
             self.optimizer.zero_grad()
             # The loss is the mean squared error between predicted q-values and the target q-values
             loss = F.mse_loss(q_values, target_f)
-            print("loss is: ", loss)
+
             # We perform backpropagation to compute the gradients
             loss.backward()
             # We Apply the gradients to update the weights
@@ -1018,7 +1023,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         # Encoding the map
         encoded_map = [G.tile_to_value[tile] for row in game_map for tile in row if isinstance(tile,str)]
         # We need to pad the map to ensure fixed size
-        expected_map_size = G.Rows*G.Columns
+        expected_map_size = G.Max_Map_Size
         encoded_map += [0] * (expected_map_size - len(encoded_map))  # Pad with '0' (neutral value)
 
         for tower in towers_list:
@@ -1042,10 +1047,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
                                     enemy.health))  # we add 1 to all the enemy and tower values
             # because in order to use padding in the neural network we cant represent the values like row and column with a 0 therefore in encoding and decoding the state the enemy and tower locations will be according to the row and column NUMBERS and not INDEX
 
-        max_towers_size = sum([1 for row in game_map for tile in row if tile == "empty"]) + len(towers_list)
-        max_enemies_size = sum([1 for row in game_map for tile in row if tile == "road"]) + sum([1 for row in game_map for tile in row if tile == "spawner"]) + len(enemies_list)
-
-        encoded_towers, encoded_enemies = self.pad_encode_state(encoded_towers,encoded_enemies, max_towers_size,max_enemies_size) #Need to pad the non existent enemies and towers so the state size always remains the same
+        encoded_towers, encoded_enemies = self.pad_encode_state(encoded_towers,encoded_enemies,G.Max_Towers,G.Max_Enemies) #Need to pad the non existent enemies and towers so the state size always remains the same
 
         flattened_towers = [attribute for attributes in encoded_towers for attribute in attributes]
         flattened_enemies = [attribute for attributes in encoded_enemies for attribute in attributes]
@@ -1224,7 +1226,7 @@ def Create_Enemy(Game_map : Game_Map, enemy):
     enemy.OnSpawner = True
     enemy_health_increase_rate = 0.01
     a = enemy_health_increase_rate
-    r = max(G.num_of_rounds//100,1)
+    r = G.num_of_rounds//100
     enemy.health = round(enemy.initial_health * (1.2)**(r))
     G.List_Of_Enemies.append(enemy)
     return Game_map.map_2d
@@ -1244,7 +1246,24 @@ def Reset_Game_Settings():
     G.Enemy_Money = G.Perm_Enemy_Money
     G.Player_HP = G.Perm_Player_HP
 
+def Create_Random_Tower_Algorithm(name):
+    Location_Strategy = random.choice(["Spread", "Base", "Spawner", "Tiles"])
+    Money_Strategy = float(random.randint(1, 100)) / 100
+    Tower_Strategy = random.sample(copy.deepcopy(cl.towers_list),random.randint(1,len(cl.towers_list)))
+    Upgrade_Strategy = random.randint(0,2)
+    strategies = ["first", "last", "weakest", "strongest"]
+    Tower_Attack_Strategy = random.sample(strategies,random.randint(1,len(strategies)))
+    Name = name
 
+    random_algorithm = Tower_Algorithm(
+        Location_Strategy=Location_Strategy,
+        Money_Strategy=Money_Strategy,
+        Tower_Strategy=Tower_Strategy,
+        Upgrade_Strategy=Upgrade_Strategy,
+        Tower_Attack_Strategy=Tower_Attack_Strategy,
+        Name=Name
+    )
+    return random_algorithm
 
 def modify_random_attribute(algorithm : Tower_Algorithm):
     # List of attributes that can be modified
@@ -1258,9 +1277,10 @@ def modify_random_attribute(algorithm : Tower_Algorithm):
         algorithm.Location_Strategy = random.choice(available_strategies)
 
     elif chosen_attribute == 'Money_Strategy':
-        new_money_strategy = algorithm.Money_Strategy
-        while new_money_strategy == algorithm.Money_Strategy or new_money_strategy > 1 or new_money_strategy < 0:
-            new_money_strategy = round(random.uniform(0, 1), 2)
+        money_change = float(random.randint(-10,10)/100) #increase or decrease by -0.1 to 0.1
+        new_money_strategy = algorithm.Money_Strategy + money_change
+        new_money_strategy = max(0.01,new_money_strategy) #ensuring the algorithm spends more than 0%
+        new_money_strategy = min(1,new_money_strategy)  # ensuring the algorithm doesn't spend more than 100%
         algorithm.Money_Strategy = new_money_strategy
 
     elif chosen_attribute == 'Upgrade_Strategy':
@@ -1270,21 +1290,37 @@ def modify_random_attribute(algorithm : Tower_Algorithm):
         algorithm.Upgrade_Strategy = new_upgrade_strategy
 
     elif chosen_attribute == 'Tower_Strategy':
+        max_towers_list = 100 # The Maximum size of the list
         tower_types = copy.deepcopy(cl.towers_list)
         action = random.choice(['add', 'remove'])
-        if action == 'add' and len(algorithm.Tower_Strategy) < len(tower_types):
-            available_towers = list(set(tower_types) - set(algorithm.Tower_Strategy))
+        if (action == 'add' and len(algorithm.Tower_Strategy) < max_towers_list) or (action == 'remove' and len(algorithm.Tower_Strategy) <= 1):
+            available_towers = tower_types
+            '''for t in tower_types:
+                append_tower = True
+                for tower in algorithm.Tower_Strategy:
+                    if (type(t) == type(tower)):
+                        append_tower = False
+                if (append_tower):
+                    available_towers.append((t))'''
             algorithm.Tower_Strategy.append(random.choice(available_towers))
-        elif action == 'remove' and len(algorithm.Tower_Strategy) > 0:
+        else:
             algorithm.Tower_Strategy.remove(random.choice(algorithm.Tower_Strategy))
 
     elif chosen_attribute == 'Tower_Attack_Strategy':
         strategies = ["first", "last", "strongest", "weakest"]
         action = random.choice(['add', 'remove'])
-        if action == 'add' and len(algorithm.Tower_Attack_Strategy) < len(strategies):
-            available_strategies = list(set(strategies) - set(algorithm.Tower_Attack_Strategy))
+        max_strategies_list = 100 # The maximum size of the list
+        if (action == 'add' and len(algorithm.Tower_Attack_Strategy) < max_strategies_list) or (action == 'remove' and len(algorithm.Tower_Attack_Strategy) <= 1):
+            available_strategies = strategies
+            '''for s in strategies:
+                append_strategy = True
+                for strategy in algorithm.Tower_Attack_Strategy:
+                    if (s == strategy):
+                        append_strategy = False
+                if (append_strategy):
+                    available_strategies.append((s))'''
             algorithm.Tower_Attack_Strategy.append(random.choice(available_strategies))
-        elif action == 'remove' and len(algorithm.Tower_Attack_Strategy) > 1:
+        else:
             algorithm.Tower_Attack_Strategy.remove(random.choice(algorithm.Tower_Attack_Strategy))
 
 def serialize_algorithm(algorithm): #there was an error when trying to dump data into a JSON file where the data had objects of classes which cannot be inserted in a JSON file so we use this function to fix it so we put the data in the file
@@ -1393,19 +1429,16 @@ def Run_Basic_Strategies(algorithms): #to run the most basic strategy in case ne
             total_rounds_survived = 0
             total_time_survived = 0
             for avg in range(0, 10):
-                if (game_number == 100):
-                    print("asds")
                 print("game number = ",game_number)
                 # Reset Variables
                 Reset_Game_Settings()
 
-                map_gen_attributes= next(map_settings_generator("simulations.json"))
-                list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order  = map_gen_attributes
-                Enemy_Options = next(enemy_options_generator("simulations.json"))
+                map_gen_attributes = next(map_settings_generator("simulations.json"))
+                list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Enemy_Options, Enemy_Options_Copy, Spawner_Order  = map_gen_attributes
 
                 Game_map.map_2d = game_map
                 Game_map.Enemy_Order = Enemy_Options
-                Game_map.Enemy_Order_Copy = copy.copy(Enemy_Options)
+                Game_map.Enemy_Order_Copy = Enemy_Options_Copy
                 G.Rows = len(Game_map.map_2d)
                 G.Columns = len(Game_map.map_2d[0])
                 Game_map.list_of_spawner_rows = list_of_spawner_rows
@@ -1444,117 +1477,110 @@ def Run_Basic_Strategies(algorithms): #to run the most basic strategy in case ne
                 f.write("\n")
 
 def Run_Algorithms():
-    for money_category in range(0, 2):
-        for health_category in range(0, 3):
-            Set_Game_Settings(10 * 2 ** (money_category + 1),
-                              10 ** health_category)  # this way we can run all the different maps on 6 different game modes
-            for game_number in range(0, 20):
-                if (game_number == 0):
-                    saving_style = "w"
-                else:
-                    saving_style = "a"
+    saving_style = "w"
+    for health_category in range(0, 3):
+        Set_Game_Settings(100,
+                          10 ** health_category)  # this way we can run all the different maps on 6 different game modes
+        for game_number in range(0, 5):
+            if (game_number != 0):
+                saving_style = "a"
 
-                Game_map = Game_Map()
-                Reset_Game_Settings()
+            Game_map = Game_Map()
+            Reset_Game_Settings()
 
-                map_gen_attributes = next(map_settings_generator("simulations.json"))
-                list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
-                Enemy_Options = next(enemy_options_generator("simulations.json"))
+            map_gen_attributes = next(map_settings_generator("simulations.json"))
+            list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Enemy_Options, Enemy_Options_Copy, Spawner_Order = map_gen_attributes
 
-                Game_map.map_2d = game_map
-                Game_map.Enemy_Order = Enemy_Options
-                Game_map.Enemy_Order_Copy = copy.copy(Enemy_Options)
-                G.Rows = len(Game_map.map_2d)
-                G.Columns = len(Game_map.map_2d[0])
-                Game_map.list_of_spawner_rows = list_of_spawner_rows
-                Game_map.list_of_spawner_columns = list_of_spawner_columns
-                Game_map.num_spawners = num_spawners
-                Game_map.Spawner_Order = Spawner_Order
+            Game_map.map_2d = game_map
+            Game_map.Enemy_Order = Enemy_Options
+            Game_map.Enemy_Order_Copy = Enemy_Options_Copy
+            G.Rows = len(Game_map.map_2d)
+            G.Columns = len(Game_map.map_2d[0])
+            Game_map.list_of_spawner_rows = list_of_spawner_rows
+            Game_map.list_of_spawner_columns = list_of_spawner_columns
+            Game_map.num_spawners = num_spawners
+            Game_map.Spawner_Order = Spawner_Order
 
-                ga = Genetic_Tower_Algorithm(
-                    population_size=10,
-                    generations=10,
-                    mutation_rate=0.1,
-                    game_map=Game_map,
-                    enemy_algorithm=Enemy_Algorithm_function
-                )
+            ga = Genetic_Tower_Algorithm(
+                population_size=10,
+                generations=10,
+                mutation_rate=0.1,
+                game_map=Game_map,
+                enemy_algorithm=Enemy_Algorithm_function
+            )
 
-                best_algorithm, best_stats = ga.run()
-                print("Best algorithm found:", best_algorithm.__dict__)
-                print("Best stats:", best_stats)
-                with open("genetic_algorithm_results.json", saving_style) as f:
-                    json.dump({"best_algorithm": serialize_algorithm(best_algorithm),
-                    "best_performance": best_stats}, f)
-                    f.write("\n")
+            best_algorithm, best_stats = ga.run()
+            print("Best algorithm found:", best_algorithm.__dict__)
+            print("Best stats:", best_stats)
+            with open("genetic_algorithm_results.json", saving_style) as f:
+                json.dump({"best_algorithm": serialize_algorithm(best_algorithm),
+                "best_performance": best_stats}, f)
+                f.write("\n")
 
-                Game_map = Game_Map()
-                Reset_Game_Settings()
+            Game_map = Game_Map()
+            Reset_Game_Settings()
 
-                map_gen_attributes = next(map_settings_generator("simulations.json"))
-                list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
-                Enemy_Options = next(enemy_options_generator("simulations.json"))
+            map_gen_attributes = next(map_settings_generator("simulations.json"))
+            list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Enemy_Options, Enemy_Options_Copy, Spawner_Order = map_gen_attributes
 
-                Game_map.map_2d = game_map
-                Game_map.Enemy_Order = Enemy_Options
-                Game_map.Enemy_Order_Copy = copy.copy(Enemy_Options)
-                G.Rows = len(Game_map.map_2d)
-                G.Columns = len(Game_map.map_2d[0])
-                Game_map.list_of_spawner_rows = list_of_spawner_rows
-                Game_map.list_of_spawner_columns = list_of_spawner_columns
-                Game_map.num_spawners = num_spawners
-                Game_map.Spawner_Order = Spawner_Order
+            Game_map.map_2d = game_map
+            Game_map.Enemy_Order = Enemy_Options
+            Game_map.Enemy_Order_Copy = Enemy_Options_Copy
+            G.Rows = len(Game_map.map_2d)
+            G.Columns = len(Game_map.map_2d[0])
+            Game_map.list_of_spawner_rows = list_of_spawner_rows
+            Game_map.list_of_spawner_columns = list_of_spawner_columns
+            Game_map.num_spawners = num_spawners
+            Game_map.Spawner_Order = Spawner_Order
 
-                simulated_annealing = Simulated_Annealing_Algorithm(
-                    game_map_template=Game_map,
-                    enemy_algorithm=Enemy_Algorithm_function,
-                    initial_algorithm=All_Money_Algorithm_instance,
-                    # this doesnt matter which algorithm we use for the start i just used this one because its the basic one
-                    initial_temperature=100.0,
-                    cooling_rate=0.95,
-                    iterations=100  # Need to change this number
-                )
+            simulated_annealing = Simulated_Annealing_Algorithm(
+                game_map_template=Game_map,
+                enemy_algorithm=Enemy_Algorithm_function,
+                initial_temperature=0,
+                cooling_rate=0.9,
+                iterations=100  # Need to change this number
+            )
 
-                best_algorithm, best_performance = simulated_annealing.run()
-                print("Best algorithm found:", best_algorithm.__dict__)
-                print("Best performance:", best_performance)
+            best_algorithm, best_performance = simulated_annealing.run()
+            print("Best algorithm found:", best_algorithm.__dict__)
+            print("Best performance:", best_performance)
 
-                with open("simulated_annealing_results.json", saving_style) as f:
-                    json.dump(
-                        {"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance},
-                        f)
-                    f.write("\n")
+            with open("simulated_annealing_results.json", saving_style) as f:
+                json.dump(
+                    {"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance},
+                    f)
+                f.write("\n")
 
-                Game_map = Game_Map()
-                Reset_Game_Settings()
+            Game_map = Game_Map()
+            Reset_Game_Settings()
 
-                map_gen_attributes = next(map_settings_generator("simulations.json"))
-                list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
-                Enemy_Options = next(enemy_options_generator("simulations.json"))
+            map_gen_attributes = next(map_settings_generator("simulations.json"))
+            list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Enemy_Options, Enemy_Options_Copy, Spawner_Order = map_gen_attributes
 
-                Game_map.map_2d = game_map
-                Game_map.Enemy_Order = Enemy_Options
-                Game_map.Enemy_Order_Copy = copy.copy(Enemy_Options)
-                G.Rows = len(Game_map.map_2d)
-                G.Columns = len(Game_map.map_2d[0])
-                Game_map.list_of_spawner_rows = list_of_spawner_rows
-                Game_map.list_of_spawner_columns = list_of_spawner_columns
-                Game_map.num_spawners = num_spawners
-                Game_map.Spawner_Order = Spawner_Order
+            Game_map.map_2d = game_map
+            Game_map.Enemy_Order = Enemy_Options
+            Game_map.Enemy_Order_Copy = Enemy_Options_Copy
+            G.Rows = len(Game_map.map_2d)
+            G.Columns = len(Game_map.map_2d[0])
+            Game_map.list_of_spawner_rows = list_of_spawner_rows
+            Game_map.list_of_spawner_columns = list_of_spawner_columns
+            Game_map.num_spawners = num_spawners
+            Game_map.Spawner_Order = Spawner_Order
 
-                local_search = Local_Search_Algorithm(
-                    game_map_template=Game_map,
-                    enemy_algorithm=Enemy_Algorithm_function,
-                    iterations=100  # Need to change this number
-                )
+            local_search = Local_Search_Algorithm(
+                game_map_template=Game_map,
+                enemy_algorithm=Enemy_Algorithm_function,
+                iterations=100  # Need to change this number
+            )
 
-                best_algorithm, best_performance = local_search.run()
-                print("Best algorithm found:", best_algorithm.__dict__)
-                print("Best performance:", best_performance)
-                with open("local_search_results.json", saving_style) as f:
-                    json.dump(
-                        {"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance},
-                        f)
-                    f.write("\n")
+            best_algorithm, best_performance = local_search.run()
+            print("Best algorithm found:", best_algorithm.__dict__)
+            print("Best performance:", best_performance)
+            with open("local_search_results.json", saving_style) as f:
+                json.dump(
+                    {"best_algorithm": serialize_algorithm(best_algorithm), "best_performance": best_performance},
+                    f)
+                f.write("\n")
 
 def Run_RLA():
     for j in range(0, 5):
@@ -1562,15 +1588,15 @@ def Run_RLA():
 
 
             Game_map = Game_Map()
-            Set_Game_Settings(50, 10)
+            Set_Game_Settings(100, 1)
             Reset_Game_Settings()
             map_gen_attributes = next(map_settings_generator("simulations.json"))
-            list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Spawner_Order = map_gen_attributes
-            Enemy_Options = next(enemy_options_generator("simulations.json"))
+            list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Enemy_Options, Enemy_Options_Copy, Spawner_Order = map_gen_attributes
+
 
             Game_map.map_2d = game_map
             Game_map.Enemy_Order = Enemy_Options
-            Game_map.Enemy_Order_Copy = copy.copy(Enemy_Options)
+            Game_map.Enemy_Order_Copy = Enemy_Options_Copy
             G.Rows = len(Game_map.map_2d)
             G.Columns = len(Game_map.map_2d[0])
             Game_map.list_of_spawner_rows = list_of_spawner_rows
@@ -1580,18 +1606,19 @@ def Run_RLA():
 
 
 
-            Max_map_size = G.Rows*G.Columns # The Max size of each state
-            Max_Towers = Game_map.Check_num_of_Tiles("empty") # The maximum amount of towers that can be placed is the number of empty tiles in the map
-            Max_Enemies = Game_map.Check_num_of_Tiles("road")+Game_map.Check_num_of_Tiles("spawner") #The maximum amount of towers that can be on the map at any moment is the number of roads and spawners
+            Max_map_size = G.Max_Map_Size
+            Max_Towers = G.Max_Towers
+            Max_Enemies = G.Max_Enemies
 
             Towers_state_attributes = 5 #the number of attributes of the tower we represent in the state (type, row, column, level/how many upgrades and attack type)
             Enemies_state_attributes = 4 #the number of attributes of the enemy we represent in the state (type, row, column, health)
             action_size = 3  # The number of actions the agent can take
 
             state_size = Max_map_size + (Max_Towers*Towers_state_attributes) + (Max_Enemies*Enemies_state_attributes) + len([G.Player_HP,G.Player_Money]) #the maximum size of the state
+
             agent = DQLAgent(state_size, action_size)
             load_model(agent)
-            trained_agent = train_agent(1000, Game_map, agent)
+            trained_agent = train_agent(100, Game_map, agent)
 
             # Saving the trained model
             save_model(trained_agent)
@@ -1611,7 +1638,7 @@ if __name__ == "__main__":
     elif (Which_Simulation == "rla"):
         Run_RLA()
     elif ("reset"):
-        Algorithms = ["simulated_annealing_results", "genetic_algorithm_results", "local_search_results","simulated_annealing_algorithm_all_results", "genetic_algorithm_all_results","local_search_algorithm_all_results"]
+        Algorithms = ["simulated_annealing_results", "genetic_algorithm_results", "local_search_results","simulated_annealing_algorithm_all_results", "genetic_algorithm_all_results","local_search_algorithm_all_results","rl_algorithm_results"]
         for algorithm in Algorithms:
             with open(f"D:/Alpha-project/{algorithm}.json", 'w') as f:
                 pass
