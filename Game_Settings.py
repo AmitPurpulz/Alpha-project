@@ -12,5 +12,8 @@ Columns = 10
 Perm_Player_HP = 10
 Perm_Player_Money = 10
 Perm_Enemy_Money = 10
-
-tile_to_value = {"empty":1, "road":2, "spawner":3, "base":5}
+Max_Map_Size = 20*20  # The biggest possible size of the map
+Max_Towers = 400  # The maximum amount of Towers that can be placed
+Max_Enemies = 100  # The maximum amount of enemies that can be in the map at a time
+# The Max towers and Max enemies are larger than they should be in order to make sure the max size of the state is always big enough for all maps
+tile_to_value = {"empty": 1, "road": 2, "spawner": 3, "base": 5}
