@@ -300,6 +300,7 @@ class Game:
         self.previous_state = None
         self.current_reward = None # To store the reward for the action
         self.current_action = None # To store the current action
+        self.previous_action = None
         self.previous_enemies_killed = 0  # To track the number of enemies killed
     def Run_Game(self):
 
@@ -342,22 +343,27 @@ class Game:
 
         if G.num_of_rounds % 4 == 0:
             if self.use_rl_agent and self.rl_agent:
+                self.previous_action = self.current_action
+                reward = 0
                 current_state = self.collect_state()
                 action_tuple = self.rl_agent.act(current_state)
                 action, tower_type, tower_attack_type, location = action_tuple
-                prev_money = G.Player_Money
-                reward = self.execute_action(action, tower_type, tower_attack_type, location) #doing the agent's action and giving a reward for the action
-
-                reward += self.calculate_reward_according_to_rounds()
-
                 self.current_action = action_tuple
+                prev_money = G.Player_Money
+
+                reward += self.check_duplicate_actions()
+                reward += self.execute_action(action, tower_type, tower_attack_type, location) #doing the agent's action and giving a reward for the action
+
+                #reward += self.calculate_reward_according_to_rounds()
+
+
                 self.current_reward = reward
                 self.previous_state = current_state
                 #print("epsilon: ",{self.rl_agent.epsilon}, "action: " ,{action_tuple}, " reward: ", {self.current_reward}, "prev_money: ", {prev_money}, "money: ",{G.Player_Money})
 
             self.Game_map.map_2d = self.Enemy_Algorithm(self.Game_map)
 
-            if (G.num_of_rounds % 100 == 0):
+            if (self.use_rl_agent and self.rl_agent and G.num_of_rounds % 100 == 0 and G.num_of_rounds != 0):
                 self.rl_agent.replay(self.rl_agent.batch_size)
         if (G.num_of_rounds % 40 == 0):
             if not self.use_rl_agent:
@@ -396,8 +402,6 @@ class Game:
             if (tower_type is not None and location is not None):
                 tower = tower_type(0,0)
                 tower.attack_type = tower_attack_type
-                if len(location) != 2:
-                    print("ds")
                 tower.row, tower.column = location
             else:
                 tower = random.choice(cl.List_Of_Towers_Options)(0, 0)  # Choose a random tower
@@ -455,9 +459,9 @@ class Game:
         if isinstance(action,int):
             action = action_dict[action]
         if action == "place_tower":
-            if (self.Game_map.map_2d[tower.row][tower.column] != tower):
-                reward -= 150
-            elif G.Player_Money < tower.price:
+            if (self.Game_map.map_2d[tower.row][tower.column] != tower and self.Game_map.map_2d[tower.row][tower.column] != "empty"):
+                reward -= 150 # Attempting to place in invalid location
+            elif self.Game_map.map_2d[tower.row][tower.column] == "empty" and G.Player_Money < tower.price:
                 reward -= 100  # Not enough money
             elif self.Game_map.count_surrounding_tiles(tower,tower.row,tower.column) == 0:
                 reward -= 100  # No places where enemies can be, are in the tower's range
@@ -495,6 +499,33 @@ class Game:
             reward += self.calculate_risk_level()
         return reward
 
+    def check_duplicate_actions(self):
+        '''this function checks if the previous and current actions are the same and rewards the RL agent accordingly'''
+        reward = 0
+        if self.previous_action:
+            action, tower, tower_attack_type, location = self.current_action
+            if (self.current_action[0] == self.previous_action[0]):
+                if (self.current_action[0] == "place_tower"):
+                    if (tower == self.previous_action[1] and location == self.previous_action[-1]):
+                        tower_price = tower(0,0).price
+                        if isinstance(self.Game_map.map_2d[location[0]][location[1]],tower):
+                            reward -= 100  # If the agent attempts to place the same tower twice
+                        elif (G.Player_Money >= tower_price):
+                            reward += 50  # If the agent attempts to place the tower after previously failing to place it due to money
+                        elif (G.Player_Money < tower_price):
+                            reward -= 50  # If the agent attempts to place the tower again but still doesn't have enough money
+                elif (self.current_action[0] == "upgrade_tower"):
+                    if (tower == self.previous_action[1] and location == self.previous_action[-1]):
+                        tower = self.Game_map.map_2d[location[0]][location[1]]
+                        if isinstance(tower, cl.Tower):
+                            if tower.upgrade_2:
+                                reward -= 50  # Trying to upgrade a tower again even though it is upgraded to the maximum
+                            if not tower.upgrade_1:
+                                if G.Player_Money >= tower.upgrade_1_cost:
+                                    reward += 50  # If the agent attempts to upgrade a tower after failing previously and succeeds
+                                else:
+                                    reward -= 50  # If the agent attempts to upgrade a tower after failing previously and fails again
+        return reward
     def calculate_risk_level(self):
         risk_level = 0.0
         max_possible_distance = (G.Rows / 2 + G.Columns - 1)
@@ -858,9 +889,9 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         self.gamma = 0.95    #Discount rate
         self.epsilon = 1   #Exploration rate
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.99
-        self.learning_rate = 0.0005
-        self.batch_size = 16
+        self.epsilon_decay = 0.999
+        self.learning_rate = 0.001
+        self.batch_size = 64
         self.model = self._build_model()
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
         self.best_performance = {
@@ -879,8 +910,10 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         model = nn.Sequential(
             nn.Linear(self.state_size, 512),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(512,512),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(512, total_action_space_size)
         )
         return model
@@ -893,6 +926,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
     def act(self, state):
         encoded_state = self.encode_state(state)
         state_tensor = torch.FloatTensor(encoded_state).unsqueeze(0)
+
 
         if random.random() <= self.epsilon:
             # Exploration
@@ -915,7 +949,6 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
             q_values = self.model(state_tensor)
             action_index = torch.argmax(q_values[0]).item()  #Get the action with the highest Q-value
             action = self.decode_action(action_index)  #Decode the action back into a usable form
-            print(action)
         return action
 
     def replay(self, batch_size):
@@ -951,7 +984,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
 
             # Convert lists to tensors
         minibatch_predicted_q_values = torch.stack(minibatch_predicted_q_values)  # Shape: (batch_size,)
-        minibatch_target_q_values = torch.tensor(minibatch_target_q_values, requires_grad=False)  # Shape: (batch_size,)
+        minibatch_target_q_values = torch.tensor(minibatch_target_q_values, requires_grad=False, dtype=torch.float32)  # Shape: (batch_size,)
 
         # Calculate loss
         loss = F.mse_loss(minibatch_predicted_q_values, minibatch_target_q_values)
@@ -1184,6 +1217,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
 
 def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the DQL agent
     training_Game_map = Game_map
+    total_rounds_survived = 0
     for episode in range(episodes):
         episode_game_map = copy.deepcopy(training_Game_map) #every episode will use the exact same game_map
         #Initializing the game with the RL agent
@@ -1194,7 +1228,7 @@ def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the D
         G.Columns = len(episode_game_map.map_2d[0])
 
         game.Run_Game()  #Run the game with the RL agent controlling the actions
-
+        total_rounds_survived += G.num_of_rounds
         #Experience replay to train the agent after every game
         agent.replay(agent.batch_size)
 
@@ -1202,7 +1236,7 @@ def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the D
         print(f"episode: {episode}, enemies killed: {G.enemies_killed}, num_of_rounds: {G.num_of_rounds}")
         agent.update_performance(G.enemies_killed, G.num_of_rounds)
 
-    return agent, agent.best_performance
+    return agent, agent.best_performance, float(total_rounds_survived/episodes)
 
 def save_performance(best_performance, filename='rl_algorithm_results.json'):
     with open(filename, 'a') as f:
@@ -1394,6 +1428,7 @@ def map_settings_generator(simulations_file):
 
         yield map_gen_atributes #Yields the map and map settings part of the simulation
 
+
 def enemy_options_generator(simulations_file):
     with open(simulations_file, 'r') as f:
         simulations = json.load(f)
@@ -1528,7 +1563,7 @@ def Run_Basic_Strategies(algorithms): #to run the most basic strategy in case ne
                 json.dump(game_stats, f)
                 f.write("\n")
 
-def Average_Results(algorithm : Tower_Algorithm, game_map: Game_Map, iterations=10):
+def Average_Results(algorithm : Tower_Algorithm, game_map: Game_Map, iterations=50):
     total_enemies_killed = 0
     total_rounds_survived = 0
     for i in range(iterations):
@@ -1541,11 +1576,15 @@ def Average_Results(algorithm : Tower_Algorithm, game_map: Game_Map, iterations=
 
 def Run_Algorithms():
     saving_style = "a"
+    All_simulation_game_attributes = []
+    for sim in range(5):  # The number of games/simulations
+        All_simulation_game_attributes.append(next(map_settings_generator("simulations.json")))
+
     for health_category in range(0, 11):
         Set_Game_Settings(100,
                           max(1,10 * health_category))  # this way we can run all the different maps on different game settings
         for game_number in range(0, 5):
-            simulation_game_attibutes = next(map_settings_generator("simulations.json"))
+            simulation_game_attibutes = copy.copy(All_simulation_game_attributes[game_number])
 
             simulation_game_map = Game_Map()
             Reset_Game_Settings()
@@ -1616,14 +1655,16 @@ def Run_Algorithms():
                 f.write("\n")
 
 def Run_RLA():
+
+    All_simulation_game_attributes = []
+    for sim in range(5):  # The number of games/simulations
+        All_simulation_game_attributes.append(next(map_settings_generator("simulations.json")))
+
     for health_category in range(0, 11):
         for game_number in range(0, 5):
             Game_map = Game_Map()
-            Set_Game_Settings(100, max(1,10*health_category))
-            Reset_Game_Settings()
-            map_gen_attributes = next(map_settings_generator("simulations.json"))
+            map_gen_attributes = copy.copy(All_simulation_game_attributes[game_number])
             list_of_spawner_rows, list_of_spawner_columns, num_spawners, game_map, Enemy_Options, Enemy_Options_Copy, Spawner_Order = map_gen_attributes
-
 
             Game_map.map_2d = game_map
             Game_map.Enemy_Order = Enemy_Options
@@ -1635,10 +1676,13 @@ def Run_RLA():
             Game_map.num_spawners = num_spawners
             Game_map.Spawner_Order = Spawner_Order
 
-
             Max_map_size = G.Max_Map_Size
             Max_Towers = G.Max_Towers
             Max_Enemies = G.Max_Enemies
+
+            Set_Game_Settings(100, max(1,10*health_category))
+            Reset_Game_Settings()
+
 
             Towers_state_attributes = 5 #the number of attributes of the tower we represent in the state (type, row, column, level/how many upgrades and attack type)
             Enemies_state_attributes = 4 #the number of attributes of the enemy we represent in the state (type, row, column, health)
@@ -1647,16 +1691,19 @@ def Run_RLA():
             state_size = Max_map_size + (Max_Towers*Towers_state_attributes) + (Max_Enemies*Enemies_state_attributes) + len([G.Player_HP,G.Player_Money]) #the maximum size of the state
 
             agent = DQLAgent(state_size, action_size)
-            if os.path.exists(path="updated_dql_model2.pth"):
-                load_model(agent,filename="updated_dql_model2.pth")
-            trained_agent, best_performance = train_agent(100, Game_map, agent)
+            if os.path.exists(path="RLA_dql_model2.pth"):
+                load_model(agent,filename="RLA_dql_model2.pth")
+
+            agent.epsilon = 0.01
+            trained_agent, best_performance, average_performance = train_agent(100, copy.deepcopy(Game_map), agent)
             with open(f"RL_results{game_number+1}.json", 'a') as f:
                 json.dump(
-                    {f"game_num:{game_number+1},health:{health_category+1}: average_performance: ": best_performance},f)
+                    {f"game_num:{game_number+1},health:{health_category+1}: best_performance: ": best_performance, "average_performance: ": average_performance},f)
                 f.write("\n")
+                print({f"game_num:{game_number+1},health:{health_category+1}: best_performance: ": best_performance})
 
             # Saving the trained model
-            save_model(trained_agent,filename="updated_dql_model2.pth")
+            save_model(trained_agent,filename="RLA_dql_model2.pth")
 
 
 Upgrade_Algorithm_instance = Upgrade_Algorithm()
