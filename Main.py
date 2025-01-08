@@ -14,6 +14,8 @@ import torch.nn.functional as F
 import time
 import collections
 import pygame
+import pickle
+import matplotlib.pyplot as plt
 
 class Game_Map:
     def __init__(self):
@@ -649,12 +651,13 @@ class Local_Search_Algorithm:
         return algorithm
 
     def run(self):
+        total_rounds = 0
         #Initialize with a predetermined algorithm i made
         current_algorithm = Create_Random_Tower_Algorithm("Local_Search_Algorithm")
 
         self.best_algorithm = copy.deepcopy(current_algorithm)
         self.best_performance = self.evaluate_algorithm(self.best_algorithm)
-
+        all_rounds_survived = []
         for iteration in range(self.iterations):
 
 
@@ -672,7 +675,9 @@ class Local_Search_Algorithm:
 
             print("current iteration: ", iteration, "performance:", new_performance)
             '''
-            #Comparing the new performance with the best performance so far
+            total_rounds += new_performance["rounds"]
+            all_rounds_survived.append(new_performance["rounds"])
+            # Comparing the new performance with the best performance so far
             if new_performance["rounds"] > self.best_performance["rounds"]:
                 self.best_algorithm = copy.deepcopy(new_algorithm)
                 self.best_performance = new_performance
@@ -682,7 +687,7 @@ class Local_Search_Algorithm:
             print(f"Best performance so far: {self.best_performance}")
             print(f"Current algorithm configuration: {self.best_algorithm.__dict__}")
             '''
-        return self.best_algorithm, self.best_performance
+        return self.best_algorithm, float(total_rounds/self.iterations), self.best_performance["rounds"]
 
 
 class Genetic_Tower_Algorithm(Tower_Algorithm):
@@ -781,19 +786,22 @@ class Genetic_Tower_Algorithm(Tower_Algorithm):
 
     def run(self):
         #Here we run the genetic algorithm over several generations
+        total_rounds = 0
+        all_rounds_survived = []
         for generation in range(self.generations):
             '''
             print(f"Generation {generation + 1}")
             '''
             performance_data = self.evaluate_population()
             for item in performance_data:
+                total_rounds+=item["rounds"]
+                all_rounds_survived.append(item["rounds"])
                 if item["rounds"] > self.Best_Performance:
                     self.Best_Performance = item["rounds"]
                     self.Best_Algorithm = copy.deepcopy(item["algorithm"])
             self.evolve_population(performance_data)
-
         # Returning the best algorithm
-        return self.Best_Algorithm
+        return self.Best_Algorithm, float(total_rounds/(self.generations*self.population_size)), self.Best_Performance
 
 
 
@@ -840,8 +848,9 @@ class Simulated_Annealing_Algorithm:
         return performance_score
 
     def run(self):
+        total_rounds = 0
         best_performance = self.evaluate_algorithm(self.best_algorithm)
-
+        all_rounds_survived = []
         for i in range(self.iterations):
             new_algorithm = copy.deepcopy(self.current_algorithm)
             modify_random_attribute(new_algorithm)
@@ -865,7 +874,8 @@ class Simulated_Annealing_Algorithm:
             '''
             current_score = self.current_performance["rounds"]
             new_score = new_performance["rounds"]
-
+            total_rounds += new_score
+            all_rounds_survived.append(new_score)
             acceptance_probability = self.acceptance_probability(self.current_performance, new_performance)
             if acceptance_probability >= random.random():
 
@@ -879,7 +889,7 @@ class Simulated_Annealing_Algorithm:
             self.current_temperature *= self.cooling_rate
             self.current_temperature = max(self.current_temperature,0.0001)  # Make sure the temperature is never 0
 
-        return self.best_algorithm, best_performance
+        return self.best_algorithm, float(total_rounds/self.iterations), best_performance["rounds"]
 
 
 class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
@@ -889,7 +899,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
         self.gamma = 0.95    #Discount rate
         self.epsilon = 1   #Exploration rate
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.999
+        self.epsilon_decay = 0.995
         self.learning_rate = 0.001
         self.batch_size = 64
         self.model = self._build_model()
@@ -898,6 +908,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
             "enemies_killed": 0,
             "rounds_survived": 0
         }
+        self.loss_history = []
 
     def _build_model(self):
         total_tower_types = len(cl.List_Of_Towers_Options)
@@ -921,7 +932,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
     def remember(self, state, action, reward, next_state, done):
         encoded_state = self.encode_state(state)  # Encode current state
         encoded_next_state = self.encode_state(next_state)  # Encode next state
-        self.memory.append((encoded_state, action, reward, encoded_next_state, done))  # Store experience
+        self.memory.append((encoded_state, action, float(reward/300), encoded_next_state, done))  # Store experience
 
     def act(self, state):
         encoded_state = self.encode_state(state)
@@ -988,6 +999,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
 
         # Calculate loss
         loss = F.mse_loss(minibatch_predicted_q_values, minibatch_target_q_values)
+        self.loss_history.append(loss.item())
         print("loss: ",loss)
         # Backpropagation
         self.optimizer.zero_grad()
@@ -1003,11 +1015,23 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
             self.best_performance["rounds_survived"] = rounds_survived
             self.best_performance["enemies_killed"] = enemies_killed
 
-    def save(self, name):
-        torch.save(self.model.state_dict(), name)
+    def save(self, model_path, memory_path):
+        torch.save(self.model.state_dict(), model_path)
 
-    def load(self, name):
-        self.model.load_state_dict(torch.load(name))
+        with open(memory_path, 'wb') as f:
+            pickle.dump(self.memory, f)
+        print("The model and memmory were save succesfuly")
+
+    def load(self, model_path, memory_path):
+        self.model.load_state_dict(torch.load(model_path))
+
+        try:
+            with open(memory_path, 'rb') as f:
+                self.memory = pickle.load(f)
+            print("Memmory load was succesful")
+        except FileNotFoundError:
+            print("Memory file not found")
+            self.memory = collections.deque(maxlen=50000)
 
     def encode_action(self, action, tower_type, tower_attack_type, location):
         #Define indices for action types
@@ -1218,6 +1242,7 @@ class DQLAgent:#Deep Q-Learning (DQL) Agent using PyTorch
 def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the DQL agent
     training_Game_map = Game_map
     total_rounds_survived = 0
+    all_rounds_survived = []
     for episode in range(episodes):
         episode_game_map = copy.deepcopy(training_Game_map) #every episode will use the exact same game_map
         #Initializing the game with the RL agent
@@ -1229,13 +1254,20 @@ def train_agent(episodes, Game_map : Game_Map, agent : DQLAgent):#Training the D
 
         game.Run_Game()  #Run the game with the RL agent controlling the actions
         total_rounds_survived += G.num_of_rounds
+        all_rounds_survived.append(G.num_of_rounds)
         #Experience replay to train the agent after every game
         agent.replay(agent.batch_size)
 
         #Updating the best performance
         print(f"episode: {episode}, enemies killed: {G.enemies_killed}, num_of_rounds: {G.num_of_rounds}")
         agent.update_performance(G.enemies_killed, G.num_of_rounds)
-
+    """    plt.plot(agent.loss_history)
+    plt.xlabel('Training Step')
+    plt.ylabel('Loss')
+    plt.title('Loss Trend During Training')
+    plt.show()
+    plt.pause(10)
+    plt.close()"""
     return agent, agent.best_performance, float(total_rounds_survived/episodes)
 
 def save_performance(best_performance, filename='rl_algorithm_results.json'):
@@ -1244,16 +1276,6 @@ def save_performance(best_performance, filename='rl_algorithm_results.json'):
         f.write("\n")
     print(f"Best performance saved to {filename}", "best performance: ", best_performance)
 
-#Saving the model
-def save_model(agent, filename='dql_model.pth'):
-    agent.save(filename)
-    print(f"Model saved to {filename}")
-
-
-#Loading the model
-def load_model(agent, filename='dql_model.pth'):
-    agent.load(filename)
-    print(f"Model loaded from {filename}")
 
 
 
@@ -1563,15 +1585,18 @@ def Run_Basic_Strategies(algorithms): #to run the most basic strategy in case ne
                 json.dump(game_stats, f)
                 f.write("\n")
 
-def Average_Results(algorithm : Tower_Algorithm, game_map: Game_Map, iterations=50):
+def Average_Results(algorithm : Tower_Algorithm, game_map: Game_Map, iterations=100):
     total_enemies_killed = 0
     total_rounds_survived = 0
+    all_rounds_survived = []
     for i in range(iterations):
         Reset_Game_Settings()
         game = Game(copy.deepcopy(game_map),algorithm,Enemy_Algorithm_function)
         game.Run_Game()
         total_rounds_survived += G.num_of_rounds
         total_enemies_killed += G.enemies_killed
+        all_rounds_survived.append(G.num_of_rounds)
+
     return (float(total_rounds_survived/iterations), float(total_enemies_killed/iterations))
 
 def Run_Algorithms():
@@ -1610,12 +1635,13 @@ def Run_Algorithms():
                 enemy_algorithm=Enemy_Algorithm_function
             )
 
-            best_algorithm = ga.run()
+            best_algorithm, total_average_performance, best_performance = ga.run()
             print("Best algorithm found:", best_algorithm.__dict__)
+            print("total average performance:", total_average_performance)
             with open(f"GA_results{game_number+1}.json", saving_style) as f:
                 results = Average_Results(best_algorithm,copy.deepcopy(simulation_game_map))
                 json.dump({f"game_num:{game_number+1},health:{health_category+1}: best_algorithm: ": serialize_algorithm(best_algorithm),
-                "average_performance": results}, f)
+                "average_performance": results, "total_average_performance": total_average_performance, "best_performance: " : best_performance}, f)
                 f.write("\n")
 
             Reset_Game_Settings()
@@ -1626,14 +1652,15 @@ def Run_Algorithms():
                 cooling_rate=0.965,
                 iterations=100
             )
-            best_algorithm, best_performance = simulated_annealing.run()
+            best_algorithm, total_average_performance, best_performance = simulated_annealing.run()
             print("Best algorithm found:", best_algorithm.__dict__)
-            print("Best performance:", best_performance)
+            print("total average performance:", total_average_performance)
 
             with open(f"SA_results{game_number+1}.json", saving_style) as f:
                 results = Average_Results(best_algorithm,copy.deepcopy(simulation_game_map))
                 json.dump(
-                    {f"game_num:{game_number+1},health:{health_category+1}: best_algorithm: ": serialize_algorithm(best_algorithm), "average_performance": results},
+                    {f"game_num:{game_number+1},health:{health_category+1}: best_algorithm: ": serialize_algorithm(best_algorithm), "average_performance": results,
+                     "total_average_performance": total_average_performance, "best_performance: " : best_performance},
                     f)
                 f.write("\n")
 
@@ -1644,13 +1671,13 @@ def Run_Algorithms():
                 iterations=100  # Need to change this number
             )
 
-            best_algorithm, best_performance = local_search.run()
+            best_algorithm, total_average_performance, best_performance = local_search.run()
             print("Best algorithm found:", best_algorithm.__dict__)
-            print("Best performance:", best_performance)
+            print("total average performance:", total_average_performance)
             with open(f"LS_results{game_number+1}", saving_style) as f:
                 results = Average_Results(best_algorithm,copy.deepcopy(simulation_game_map))
                 json.dump(
-                    {f"game_num:{game_number+1},health:{health_category+1}: best_algorithm: ": serialize_algorithm(best_algorithm), "average_performance": results},
+                    {f"game_num:{game_number+1},health:{health_category+1}: best_algorithm: ": serialize_algorithm(best_algorithm), "average_performance": results, "total_average_performance": total_average_performance, "best_performance: " : best_performance},
                     f)
                 f.write("\n")
 
@@ -1691,11 +1718,10 @@ def Run_RLA():
             state_size = Max_map_size + (Max_Towers*Towers_state_attributes) + (Max_Enemies*Enemies_state_attributes) + len([G.Player_HP,G.Player_Money]) #the maximum size of the state
 
             agent = DQLAgent(state_size, action_size)
-            if os.path.exists(path="RLA_dql_model2.pth"):
-                load_model(agent,filename="RLA_dql_model2.pth")
-
-            agent.epsilon = 0.01
-            trained_agent, best_performance, average_performance = train_agent(100, copy.deepcopy(Game_map), agent)
+            if os.path.exists(path="Main_RLA_DQL_model.pth"):
+                agent.load("Main_RLA_DQL_model.pth","Main_RLA_DQL_memory.pkl")
+            agent.epsilon = 0.1
+            trained_agent, best_performance, average_performance = train_agent(200, copy.deepcopy(Game_map), agent)
             with open(f"RL_results{game_number+1}.json", 'a') as f:
                 json.dump(
                     {f"game_num:{game_number+1},health:{health_category+1}: best_performance: ": best_performance, "average_performance: ": average_performance},f)
@@ -1703,7 +1729,7 @@ def Run_RLA():
                 print({f"game_num:{game_number+1},health:{health_category+1}: best_performance: ": best_performance})
 
             # Saving the trained model
-            save_model(trained_agent,filename="RLA_dql_model2.pth")
+            trained_agent.save("Main_RLA_DQL_model.pth","Main_RLA_DQL_memory.pkl")
 
 
 Upgrade_Algorithm_instance = Upgrade_Algorithm()
